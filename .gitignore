@@ -1,0 +1,12 @@
+*.swp
+*.swo
+*.exe
+*.dll
+vim_session_*
+*_dbg
+tetris
+tags
+Debug/
+Release/
+Profile/
+Makefile
