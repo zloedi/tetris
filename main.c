@@ -25,12 +25,16 @@ static void Init( void ) {
     ASCIISymbolSize = v2Scale( ASCIITextureSize, 1 / 16. );
 }
 
-static void NarisuvaiKartaOtSimvoli( c2_t poziciaNaEkrana, const char *karta, c2_t razmerNaKarta, color_t cviat )
+static void NarisuvaiKartaOtSimvoli( c2_t poziciaNaEkrana, const char *karta, c2_t razmerNaKarta, color_t cviat, int kartinkaNaNeprozrachenSimvol )
 {
     R_ColorC( cviat );
     for ( int y = 0; y < razmerNaKarta.y; y++ ) {
         for ( int x = 0; x < razmerNaKarta.x; x++ ) {
-            NarisuvaiSimvol( c2Add( c2xy( x, y ), poziciaNaEkrana ), karta[x + y * razmerNaKarta.x] );
+            int simvol = karta[x + y * razmerNaKarta.x];
+            if ( simvol != ' ' ) {
+                simvol = kartinkaNaNeprozrachenSimvol;
+            } 
+            NarisuvaiSimvol( c2Add( c2xy( x, y ), poziciaNaEkrana ), simvol );
         }
     }
 }
@@ -89,15 +93,48 @@ const char *FigZ =
 static int x_vazrastFigura;
 static int x_predishnoVreme;
 
+static int ProchetiSimvolOtIgralnoPole( c2_t pozicia ) {
+    return IgralnoPole[pozicia.x + pozicia.y * IgralnoPoleRazmer.x];
+}
+
+static bool_t SekaLiNeprozrachniSimvoli( c2_t poziciaNaFigura, const char *figura, c2_t razmerNaFigura ) {
+    for ( int y = 0; y < razmerNaFigura.y; y++ ) {
+        for ( int x = 0; x < razmerNaFigura.x; x++ ) {
+            c2_t poziciaNaSimvol = c2Add( c2xy( x, y ), poziciaNaFigura );
+            int simvolOtFigura = figura[x + y * razmerNaFigura.x];
+            int simvolOtIgralnoPole = ProchetiSimvolOtIgralnoPole( poziciaNaSimvol );
+            // simvolat ot figurata e neprozrachen i simvolat na sashtata pozicia ot igralnoto pole e neprozrachen
+            // ! - otricanie
+            // == - ravenstvo
+            // != - neravenstvo
+            // && - logichesko "i"
+            // || - logichesko "ili"
+            if ( simvolOtFigura != ' ' && simvolOtIgralnoPole != ' ' ) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static c2_t IzchisliPoziciaSporedSkorostVreme( int skorost, int vreme ) {
+    return c2xy( IgralnoPoleRazmer.x / 2 - 2, skorost * vreme / 1000 );
+}
+
 static void PraviKadar( void ) {
     PixelSize = Maxi( R_GetWindowSize().y / 320, 1 );
-    NarisuvaiKartaOtSimvoli( c2zero, IgralnoPole, IgralnoPoleRazmer, colWhite );
+    NarisuvaiKartaOtSimvoli( c2zero, IgralnoPole, IgralnoPoleRazmer, colWhite, 1 + 11 * 16 );
     int sega = SYS_RealTime();
-    x_vazrastFigura += sega - x_predishnoVreme;
+    int vreme = x_vazrastFigura + sega - x_predishnoVreme;
     int skorost = 3;
-    int vreme = x_vazrastFigura;
-    NarisuvaiKartaOtSimvoli( c2xy( 2, skorost * vreme / 1000 ), FigCherta, FigChertaRazmer, colGreen );
+    c2_t poziciaNaFigura = IzchisliPoziciaSporedSkorostVreme( skorost, vreme );
+    if ( ! SekaLiNeprozrachniSimvoli( poziciaNaFigura, FigCherta, FigChertaRazmer ) ) {
+        x_vazrastFigura = vreme;
+    }
+    poziciaNaFigura = IzchisliPoziciaSporedSkorostVreme( skorost, x_vazrastFigura );
+    NarisuvaiKartaOtSimvoli( poziciaNaFigura, FigCherta, FigChertaRazmer, colGreen, 1 );
     x_predishnoVreme = sega;
+
     v2_t windowSize = R_GetWindowSize();
     DrawASCIITexture( v2xy( windowSize.x - ASCIITextureSize.x, 0 ) );
 }
