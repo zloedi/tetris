@@ -5,14 +5,13 @@ static v2_t ASCIITextureSize;
 static v2_t ASCIISymbolSize;
 static int PixelSize;
 
-static void DrawASCIITexture( v2_t position )
-{
+static void DrawASCIITexture( v2_t position ) {
     R_ColorC( colRed );
     R_DrawPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
 }
 
 static void NarisuvaiSimvol( c2_t position, int symbol ) {
-    v2_t st0 = v2xy( ( symbol % 16 ) * ASCIISymbolSize.x, ( symbol / 16 ) * ASCIISymbolSize.y );
+    v2_t st0 = v2xy( ( symbol & 15 ) * ASCIISymbolSize.x, ( symbol / 16 ) * ASCIISymbolSize.y );
     v2_t st1 = v2Add( st0, ASCIISymbolSize );
     st0 = v2xy( st0.x / ASCIITextureSize.x, st0.y / ASCIITextureSize.y );
     st1 = v2xy( st1.x / ASCIITextureSize.x, st1.y / ASCIITextureSize.y );
@@ -25,8 +24,7 @@ static void Init( void ) {
     ASCIISymbolSize = v2Scale( ASCIITextureSize, 1 / 16. );
 }
 
-static void NarisuvaiKartaOtSimvoli( c2_t poziciaNaEkrana, const char *karta, c2_t razmerNaKarta, color_t cviat, int kartinkaNaNeprozrachenSimvol )
-{
+static void NarisuvaiKartaOtSimvoli( c2_t poziciaNaEkrana, const char *karta, c2_t razmerNaKarta, color_t cviat, int kartinkaNaNeprozrachenSimvol ) {
     R_ColorC( cviat );
     for ( int y = 0; y < razmerNaKarta.y; y++ ) {
         for ( int x = 0; x < razmerNaKarta.x; x++ ) {
