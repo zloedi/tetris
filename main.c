@@ -7,7 +7,7 @@ static int PixelSize;
 
 static void DrawASCIITexture( v2_t position ) {
     R_ColorC( colRed );
-    R_DrawPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
+    R_BlendPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
 }
 
 static void NarisuvaiSimvol( c2_t position, int symbol ) {
@@ -16,7 +16,7 @@ static void NarisuvaiSimvol( c2_t position, int symbol ) {
     st0 = v2xy( st0.x / ASCIITextureSize.x, st0.y / ASCIITextureSize.y );
     st1 = v2xy( st1.x / ASCIITextureSize.x, st1.y / ASCIITextureSize.y );
     v2_t scale = v2Scale( ASCIISymbolSize, PixelSize );
-    R_DrawPicV2( v2xy( position.x * scale.x, position.y * scale.y ), scale, st0, st1, ASCIITexture );
+    R_BlendPicV2( v2xy( position.x * scale.x, position.y * scale.y ), scale, st0, st1, ASCIITexture );
 }
 
 static void Init( void ) {
@@ -95,12 +95,19 @@ static int ProchetiSimvolOtIgralnoPole( c2_t pozicia ) {
     return IgralnoPole[pozicia.x + pozicia.y * IgralnoPoleRazmer.x];
 }
 
-static bool_t SekaLiNeprozrachniSimvoli( c2_t poziciaNaFigura, const char *figura, c2_t razmerNaFigura ) {
+static int ProchetiSimvolOtFigura( c2_t poziciaVavFigura, c2_t razmerNaFigura, const char *figura ) {
+    return figura[poziciaVavFigura.x + poziciaVavFigura.y * razmerNaFigura.x];
+}
+
+static bool_t SekaLiNeprozrachniSimvoli( c2_t poziciaNaFiguraNaEkrana, const char *figura, c2_t razmerNaFigura ) {
     for ( int y = 0; y < razmerNaFigura.y; y++ ) {
         for ( int x = 0; x < razmerNaFigura.x; x++ ) {
-            c2_t poziciaNaSimvol = c2Add( c2xy( x, y ), poziciaNaFigura );
-            int simvolOtFigura = figura[x + y * razmerNaFigura.x];
-            int simvolOtIgralnoPole = ProchetiSimvolOtIgralnoPole( poziciaNaSimvol );
+            // tekushtia simvol ot figurata e na tazi pozicia
+            c2_t poziciaVavFigura = c2xy( x, y );
+            int simvolOtFigura = ProchetiSimvolOtFigura( poziciaVavFigura, razmerNaFigura, figura );
+            // otmesti s poziciaNaFiguraNaEkrana za da namerish poziciata na ekrana
+            c2_t poziciaNaEkrana = c2Add( poziciaVavFigura, poziciaNaFiguraNaEkrana );
+            int simvolOtIgralnoPole = ProchetiSimvolOtIgralnoPole( poziciaNaEkrana );
             // simvolat ot figurata e neprozrachen i simvolat na sashtata pozicia ot igralnoto pole e neprozrachen
             // ! - otricanie
             // == - ravenstvo
@@ -138,6 +145,6 @@ static void PraviKadar( void ) {
 }
 
 int main( int argc, char *argv[] ) {
-    UT_RunApp( "tetris", NULL, Init, PraviKadar, NULL );
+    UT_RunApp( "tetris", NULL, Init, PraviKadar, NULL, 0 );
     return 0;
 }
