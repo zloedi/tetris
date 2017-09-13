@@ -33,11 +33,13 @@ static void Init( void ) {
 /*
 
 TODO
+Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
 Kogato figurite padnat na danoto na poleto i ochertaiat linia s ostatacite na drugite figuri, zapalneniat red se unishtojava.
-Igrachat moje da varti aktivnata figura.
+Igrachat moje da varti aktivnata figura sas strelka nagore.
     Izpolzvaiki gorna strelka
 Igrata stava po-barza/vdiga se nivoto sled n na broi unishtojeni redove.
-Ako chast ot figura dokosne gornia krai na igralnoto pole, igrata e zagubena.
+Ako figurata ne moje da bade mestena dokato e chastichno izvan poleto, igrata e zagubena
+Figurite sa s razlichna forma.
 Tochki se davat za vseki iztrit red.
 Sledvashtata figura koiato shte bade aktivna sled tekushtata e pokazana na ekrana kato chast ot potrebitelskia interfeis.
 Bonus tochki se davat za ednovremenno unidhtojeni mnojestvo redove.
