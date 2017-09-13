@@ -120,17 +120,24 @@ static int x_vazrastNaAktivnaFigura;
 static int x_skorostNaAktivnaFigura = 3;
 static int x_butonNadolu;
 
+static int ProchetiSimvolOtFigura( c2_t poziciaVavFigura, c2_t razmerNaFigura, const char *figura ) {
+    if ( poziciaVavFigura.x >= 0 && poziciaVavFigura.x < razmerNaFigura.x
+        && poziciaVavFigura.y >= 0 && poziciaVavFigura.y < razmerNaFigura.y ) {
+        return figura[poziciaVavFigura.x + poziciaVavFigura.y * razmerNaFigura.x];
+    }
+    return ' ';
+}
+
 static int ProchetiSimvolOtIgralnoPole( c2_t pozicia ) {
-    return IgralnoPole[pozicia.x + pozicia.y * IgralnoPoleRazmer.x];
+    return ProchetiSimvolOtFigura( pozicia, IgralnoPoleRazmer, IgralnoPole );
 }
 
 static void ZapishiSimvolVavFigura( int simvol, c2_t pozicia, c2_t razmerNaFigura, char *figura )
 {
-    figura[pozicia.x + pozicia.y * razmerNaFigura.x] = simvol;
-}
-
-static int ProchetiSimvolOtFigura( c2_t poziciaVavFigura, c2_t razmerNaFigura, const char *figura ) {
-    return figura[poziciaVavFigura.x + poziciaVavFigura.y * razmerNaFigura.x];
+    if ( pozicia.x >= 0 && pozicia.x < razmerNaFigura.x
+        && pozicia.y >= 0 && pozicia.y < razmerNaFigura.y ) {
+        figura[pozicia.x + pozicia.y * razmerNaFigura.x] = simvol;
+    }
 }
 
 static bool_t EProzrachenSimvol( int simvol ) {
@@ -157,9 +164,9 @@ static void NarisuvaiKartaOtSimvoli( c2_t poziciaNaEkrana, const char *karta, c2
         ['#'] = 1 + 11 * 16,
     };
     R_ColorC( cviat );
-    for ( int y = 0; y < razmerNaKarta.y; y++ ) {
+    for ( int i = 0, y = 0; y < razmerNaKarta.y; y++ ) {
         for ( int x = 0; x < razmerNaKarta.x; x++ ) {
-            int simvol = karta[x + y * razmerNaKarta.x];
+            int simvol = karta[i++];
             NarisuvaiSimvol( c2Add( c2xy( x, y ), poziciaNaEkrana ), saotv[simvol] );
         }
     }
@@ -196,7 +203,7 @@ static int IzchisliYPoziciaSporedSkorostVreme( int skorost, int vreme ) {
 static void InicializiraiAktivnaFigura( void ) {
     x_poziciaNaAktivnataFigura = c2xy( IgralnoPoleRazmer.x / 2 - 2, 0 );
     x_predishnoVreme = SYS_RealTime();
-    x_vazrastNaAktivnaFigura = 0;
+    x_vazrastNaAktivnaFigura = -1000;
     x_butonNadolu = 0;
 }
 
