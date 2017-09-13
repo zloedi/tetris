@@ -116,8 +116,7 @@ const char *FigZ =
 
 static c2_t x_poziciaNaAktivnataFigura;
 static int x_predishnoVreme;
-static int x_vazrastNaAktivnaFigura;
-static int x_skorostNaAktivnaFigura = 3;
+static int x_skorostNaAktivnaFigura = 35;
 static int x_butonNadolu;
 
 static int ProchetiSimvolOtKarta( c2_t poziciaVavFigura, c2_t razmerNaFigura, const char *figura ) {
@@ -172,7 +171,7 @@ static void NarisuvaiKartaOtSimvoli( c2_t poziciaNaEkrana, const char *karta, c2
     }
 }
 
-static bool_t SekaLiNeprozrachniSimvoli( c2_t poziciaNaFiguraNaEkrana, const char *figura, c2_t razmerNaFigura ) {
+static bool_t SekaLiIgralnoPole( c2_t poziciaNaFiguraNaEkrana, const char *figura, c2_t razmerNaFigura ) {
     for ( int y = 0; y < razmerNaFigura.y; y++ ) {
         for ( int x = 0; x < razmerNaFigura.x; x++ ) {
             // tekushtia simvol ot figurata e na tazi pozicia
@@ -196,19 +195,22 @@ static bool_t SekaLiNeprozrachniSimvoli( c2_t poziciaNaFiguraNaEkrana, const cha
     return false;
 }
 
-static int IzchisliYPoziciaSporedSkorostVreme( int skorost, int vreme ) {
-    return skorost * vreme / 1000;
+static c2_t IntToFixed( c2_t c ) {
+    return c2Scale( c, 100 );
+}
+
+static c2_t FixedToInt( c2_t c ) {
+    return c2Divs( c, 100 );
 }
 
 static void InicializiraiAktivnaFigura( void ) {
-    x_poziciaNaAktivnataFigura = c2xy( IgralnoPoleRazmer.x / 2 - 2, 0 );
+    x_poziciaNaAktivnataFigura = IntToFixed( c2xy( IgralnoPoleRazmer.x / 2 - 2, -FigChertaRazmer.y ) );
     x_predishnoVreme = SYS_RealTime();
-    x_vazrastNaAktivnaFigura = -1000;
     x_butonNadolu = 0;
 }
 
 static bool_t ProveriIMesti( c2_t badeshtaPozicia ) {
-    bool_t mogaDaMestia = ! SekaLiNeprozrachniSimvoli( badeshtaPozicia, FigCherta, FigChertaRazmer );
+    bool_t mogaDaMestia = ! SekaLiIgralnoPole( FixedToInt( badeshtaPozicia ), FigCherta, FigChertaRazmer );
     if ( mogaDaMestia ) {
         x_poziciaNaAktivnataFigura = badeshtaPozicia;
     }
@@ -216,8 +218,7 @@ static bool_t ProveriIMesti( c2_t badeshtaPozicia ) {
 }
     
 static bool_t MestiNadolu( int deltaVreme ) {
-    x_vazrastNaAktivnaFigura += deltaVreme * ( 1 + x_butonNadolu * x_skorostNaAktivnaFigura * 3 );
-    int y = IzchisliYPoziciaSporedSkorostVreme( x_skorostNaAktivnaFigura, x_vazrastNaAktivnaFigura );
+    int y = x_poziciaNaAktivnataFigura.y + deltaVreme * x_skorostNaAktivnaFigura * ( 1 + x_butonNadolu * 3 ) / 100;
     c2_t badeshtaPozicia = c2xy( x_poziciaNaAktivnataFigura.x, y );
     return ProveriIMesti( badeshtaPozicia );
 }
@@ -231,11 +232,11 @@ static void PraviKadar( void ) {
     // ako ne moga da se premestia nadolu...
     if ( ! MestiNadolu( deltaVreme ) ) {
         // ... togava kopirai aktivnata figura varhu igralnoto pole
-        KopiraiKartaVDrugaKarta( FigCherta, FigChertaRazmer, IgralnoPole, IgralnoPoleRazmer, x_poziciaNaAktivnataFigura );
+        KopiraiKartaVDrugaKarta( FigCherta, FigChertaRazmer, IgralnoPole, IgralnoPoleRazmer, FixedToInt( x_poziciaNaAktivnataFigura ) );
         // ... i napravi nova figura
         InicializiraiAktivnaFigura();
     } else {
-        NarisuvaiKartaOtSimvoli( x_poziciaNaAktivnataFigura, FigCherta, FigChertaRazmer, colGreen );
+        NarisuvaiKartaOtSimvoli( FixedToInt( x_poziciaNaAktivnataFigura ), FigCherta, FigChertaRazmer, colGreen );
     }
     // narisuvai igralnoto pole izpolzvaiki funkciata za risuvane na karta ot simvoli
     NarisuvaiKartaOtSimvoli( c2zero, IgralnoPole, IgralnoPoleRazmer, colWhite );
@@ -243,15 +244,16 @@ static void PraviKadar( void ) {
     v2_t windowSize = R_GetWindowSize();
     DrawASCIITexture( v2xy( windowSize.x - ASCIITextureSize.x, 0 ) );
     x_predishnoVreme = sega;
+    SDL_Delay( 10 );
 }
 
 static void MestiNadiasno_f( void ) {
-    c2_t badeshtaPozicia = c2Add( x_poziciaNaAktivnataFigura, c2xy( +1, 0 ) );
+    c2_t badeshtaPozicia = c2Add( x_poziciaNaAktivnataFigura, IntToFixed( c2xy( +1, 0 ) ) );
     ProveriIMesti( badeshtaPozicia );
 }
 
 static void MestiNaliavo_f( void ) {
-    c2_t badeshtaPozicia = c2Add( x_poziciaNaAktivnataFigura, c2xy( -1, 0 ) );
+    c2_t badeshtaPozicia = c2Add( x_poziciaNaAktivnataFigura, IntToFixed( c2xy( -1, 0 ) ) );
     ProveriIMesti( badeshtaPozicia );
 }
 
