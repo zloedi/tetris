@@ -118,7 +118,7 @@ const char *FigZ =
 
 static c2_t x_poziciaNaAktivnataFigura;
 static int x_predishnoVreme;
-static int x_skorostNaAktivnaFigura = 35;
+static int x_skorostNaAktivnaFigura = 64;
 static int x_butonNadolu;
 
 static int ProchetiSimvolOtKarta( c2_t poziciaVavFigura, c2_t razmerNaFigura, const char *figura ) {
@@ -198,11 +198,11 @@ static bool_t SekaLiIgralnoPole( c2_t poziciaNaFiguraNaEkrana, const char *figur
 }
 
 static c2_t IntToFixed( c2_t c ) {
-    return c2Scale( c, 100 );
+    return c2LShifts( c, 8 );
 }
 
 static c2_t FixedToInt( c2_t c ) {
-    return c2Divs( c, 100 );
+    return c2RShifts( c, 8 );
 }
 
 static void InicializiraiAktivnaFigura( void ) {
