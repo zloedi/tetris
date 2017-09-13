@@ -45,9 +45,9 @@ Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
 
 IN PROGRESS
 Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
-    Proverka dali figura e na danoto (ne moje da se manipulira poveche).
-    Kopirane na starata figura varhu igralnoto pole. 
-    Sazdavene na nova figura.
+    * Proverka dali figura e na danoto (ne moje da se manipulira poveche).
+    * Kopirane na starata figura varhu igralnoto pole. 
+    * Sazdavene na nova figura.
     Figurite sa s razlichna forma.
 
 DONE
@@ -120,7 +120,7 @@ static int x_vazrastNaAktivnaFigura;
 static int x_skorostNaAktivnaFigura = 3;
 static int x_butonNadolu;
 
-static int ProchetiSimvolOtFigura( c2_t poziciaVavFigura, c2_t razmerNaFigura, const char *figura ) {
+static int ProchetiSimvolOtKarta( c2_t poziciaVavFigura, c2_t razmerNaFigura, const char *figura ) {
     if ( poziciaVavFigura.x >= 0 && poziciaVavFigura.x < razmerNaFigura.x
         && poziciaVavFigura.y >= 0 && poziciaVavFigura.y < razmerNaFigura.y ) {
         return figura[poziciaVavFigura.x + poziciaVavFigura.y * razmerNaFigura.x];
@@ -129,10 +129,10 @@ static int ProchetiSimvolOtFigura( c2_t poziciaVavFigura, c2_t razmerNaFigura, c
 }
 
 static int ProchetiSimvolOtIgralnoPole( c2_t pozicia ) {
-    return ProchetiSimvolOtFigura( pozicia, IgralnoPoleRazmer, IgralnoPole );
+    return ProchetiSimvolOtKarta( pozicia, IgralnoPoleRazmer, IgralnoPole );
 }
 
-static void ZapishiSimvolVavFigura( int simvol, c2_t pozicia, c2_t razmerNaFigura, char *figura )
+static void ZapishiSimvolVKarta( int simvol, c2_t pozicia, c2_t razmerNaFigura, char *figura )
 {
     if ( pozicia.x >= 0 && pozicia.x < razmerNaFigura.x
         && pozicia.y >= 0 && pozicia.y < razmerNaFigura.y ) {
@@ -149,10 +149,10 @@ static void KopiraiKartaVDrugaKarta( const char *iztochnik, c2_t razmerIztochnik
     for ( int y = 0; y < razmerIztochnik.y; y++ ) {
         for ( int x = 0; x < razmerIztochnik.x; x++ ) {
             c2_t xy = c2xy( x, y );
-            int simvol = ProchetiSimvolOtFigura( xy, razmerIztochnik, iztochnik );
+            int simvol = ProchetiSimvolOtKarta( xy, razmerIztochnik, iztochnik );
             if ( ! EProzrachenSimvol( simvol ) ) {
                 c2_t krainaPozicia = c2Add( xy, poziciaVCelta );
-                ZapishiSimvolVavFigura( simvol, krainaPozicia, razmerCel, cel );
+                ZapishiSimvolVKarta( simvol, krainaPozicia, razmerCel, cel );
             }
         }
     }
@@ -177,7 +177,7 @@ static bool_t SekaLiNeprozrachniSimvoli( c2_t poziciaNaFiguraNaEkrana, const cha
         for ( int x = 0; x < razmerNaFigura.x; x++ ) {
             // tekushtia simvol ot figurata e na tazi pozicia
             c2_t poziciaVavFigura = c2xy( x, y );
-            int simvolOtFigura = ProchetiSimvolOtFigura( poziciaVavFigura, razmerNaFigura, figura );
+            int simvolOtFigura = ProchetiSimvolOtKarta( poziciaVavFigura, razmerNaFigura, figura );
             // otmesti s poziciaNaFiguraNaEkrana za da namerish poziciata na ekrana na tozi simvol
             c2_t poziciaNaEkrana = c2Add( poziciaVavFigura, poziciaNaFiguraNaEkrana );
             int simvolOtIgralnoPole = ProchetiSimvolOtIgralnoPole( poziciaNaEkrana );
