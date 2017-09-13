@@ -28,37 +28,27 @@ static void Init( void ) {
     InicializiraiAktivnaFigura();
 }
 
-static void NarisuvaiKartaOtSimvoli( c2_t poziciaNaEkrana, const char *karta, c2_t razmerNaKarta, color_t cviat, int kartinkaNaNeprozrachenSimvol ) {
-    R_ColorC( cviat );
-    for ( int y = 0; y < razmerNaKarta.y; y++ ) {
-        for ( int x = 0; x < razmerNaKarta.x; x++ ) {
-            int simvol = karta[x + y * razmerNaKarta.x];
-            if ( simvol != ' ' ) {
-                simvol = kartinkaNaNeprozrachenSimvol;
-            } 
-            NarisuvaiSimvol( c2Add( c2xy( x, y ), poziciaNaEkrana ), simvol );
-        }
-    }
-}
-
 //==============================================================================================
 
 /*
 
 TODO
 Kogato figurite padnat na danoto na poleto i ochertaiat linia s ostatacite na drugite figuri, zapalneniat red se unishtojava.
-Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
 Igrachat moje da varti aktivnata figura.
     Izpolzvaiki gorna strelka
 Igrata stava po-barza/vdiga se nivoto sled n na broi unishtojeni redove.
 Ako chast ot figura dokosne gornia krai na igralnoto pole, igrata e zagubena.
-Figurite sa s razlichna forma.
 Tochki se davat za vseki iztrit red.
 Sledvashtata figura koiato shte bade aktivna sled tekushtata e pokazana na ekrana kato chast ot potrebitelskia interfeis.
 Bonus tochki se davat za ednovremenno unidhtojeni mnojestvo redove.
 Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
 
 IN PROGRESS
+Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
+    Proverka dali figura e na danoto (ne moje da se manipulira poveche).
+    Kopirane na starata figura varhu igralnoto pole. 
+    Sazdavene na nova figura.
+    Figurite sa s razlichna forma.
 
 DONE
 
@@ -77,7 +67,7 @@ Tue Sep 12 16:16:19 EEST 2017
 
 // VNIMANIE! promeni tezi razmeri, ako promenish razmera na poleto!
 const c2_t IgralnoPoleRazmer = { .x = 12, .y = 20 };
-const char *IgralnoPole =
+char IgralnoPole[] =
 "#          #"
 "#          #"
 "#          #"
@@ -102,13 +92,13 @@ const char *IgralnoPole =
                       
 const c2_t FigChertaRazmer = { .x = 4, .y = 4 };
 const char *FigCherta =
-" #  "
-" #  "
-" #  "
-" #  "
+" @  "
+" @  "
+" @  "
+" @  "
 
 "    "
-"####"
+"@@@@"
 "    "
 "    "
 ;
@@ -134,8 +124,45 @@ static int ProchetiSimvolOtIgralnoPole( c2_t pozicia ) {
     return IgralnoPole[pozicia.x + pozicia.y * IgralnoPoleRazmer.x];
 }
 
+static void ZapishiSimvolVavFigura( int simvol, c2_t pozicia, c2_t razmerNaFigura, char *figura )
+{
+    figura[pozicia.x + pozicia.y * razmerNaFigura.x] = simvol;
+}
+
 static int ProchetiSimvolOtFigura( c2_t poziciaVavFigura, c2_t razmerNaFigura, const char *figura ) {
     return figura[poziciaVavFigura.x + poziciaVavFigura.y * razmerNaFigura.x];
+}
+
+static bool_t EProzrachenSimvol( int simvol ) {
+    return simvol == ' ';
+}
+
+static void KopiraiKartaVDrugaKarta( const char *iztochnik, c2_t razmerIztochnik, 
+                                        char *cel, c2_t razmerCel, c2_t poziciaVCelta ) {
+    for ( int y = 0; y < razmerIztochnik.y; y++ ) {
+        for ( int x = 0; x < razmerIztochnik.x; x++ ) {
+            c2_t xy = c2xy( x, y );
+            int simvol = ProchetiSimvolOtFigura( xy, razmerIztochnik, iztochnik );
+            if ( ! EProzrachenSimvol( simvol ) ) {
+                c2_t krainaPozicia = c2Add( xy, poziciaVCelta );
+                ZapishiSimvolVavFigura( simvol, krainaPozicia, razmerCel, cel );
+            }
+        }
+    }
+}
+
+static void NarisuvaiKartaOtSimvoli( c2_t poziciaNaEkrana, const char *karta, c2_t razmerNaKarta, color_t cviat ) {
+    static const int saotv[256] = {
+        ['@'] = 1,
+        ['#'] = 1 + 11 * 16,
+    };
+    R_ColorC( cviat );
+    for ( int y = 0; y < razmerNaKarta.y; y++ ) {
+        for ( int x = 0; x < razmerNaKarta.x; x++ ) {
+            int simvol = karta[x + y * razmerNaKarta.x];
+            NarisuvaiSimvol( c2Add( c2xy( x, y ), poziciaNaEkrana ), saotv[simvol] );
+        }
+    }
 }
 
 static bool_t SekaLiNeprozrachniSimvoli( c2_t poziciaNaFiguraNaEkrana, const char *figura, c2_t razmerNaFigura ) {
@@ -153,7 +180,8 @@ static bool_t SekaLiNeprozrachniSimvoli( c2_t poziciaNaFiguraNaEkrana, const cha
             // != - neravenstvo
             // && - logichesko "i"
             // || - logichesko "ili"
-            if ( simvolOtFigura != ' ' && simvolOtIgralnoPole != ' ' ) {
+            if ( ! EProzrachenSimvol( simvolOtFigura ) 
+                    && ! EProzrachenSimvol( simvolOtIgralnoPole ) ) {
                 return true;
             }
         }
@@ -168,31 +196,42 @@ static int IzchisliYPoziciaSporedSkorostVreme( int skorost, int vreme ) {
 static void InicializiraiAktivnaFigura( void ) {
     x_poziciaNaAktivnataFigura = c2xy( IgralnoPoleRazmer.x / 2 - 2, 0 );
     x_predishnoVreme = SYS_RealTime();
+    x_vazrastNaAktivnaFigura = 0;
+    x_butonNadolu = 0;
 }
 
-static void ProveriIMesti( c2_t badeshtaPozicia ) {
-    if ( ! SekaLiNeprozrachniSimvoli( badeshtaPozicia, FigCherta, FigChertaRazmer ) ) {
+static bool_t ProveriIMesti( c2_t badeshtaPozicia ) {
+    bool_t mogaDaMestia = ! SekaLiNeprozrachniSimvoli( badeshtaPozicia, FigCherta, FigChertaRazmer );
+    if ( mogaDaMestia ) {
         x_poziciaNaAktivnataFigura = badeshtaPozicia;
     }
+    return mogaDaMestia;
 }
     
-static void MestiNadolu( int deltaVreme ) {
+static bool_t MestiNadolu( int deltaVreme ) {
     x_vazrastNaAktivnaFigura += deltaVreme * ( 1 + x_butonNadolu * x_skorostNaAktivnaFigura * 3 );
     int y = IzchisliYPoziciaSporedSkorostVreme( x_skorostNaAktivnaFigura, x_vazrastNaAktivnaFigura );
     c2_t badeshtaPozicia = c2xy( x_poziciaNaAktivnataFigura.x, y );
-    ProveriIMesti( badeshtaPozicia );
+    return ProveriIMesti( badeshtaPozicia );
 }
 
 static void PraviKadar( void ) {
     // izchisli goleminata na simvolite/spraitove
     // simvoli i spraitove v tozi sa vzaimnozameniaemi
     PixelSize = Maxi( R_GetWindowSize().y / 320, 1 );
-    // narisuvai igralnoto pole izpolzvaiki funkciata za risuvane na karta ot simvoli
-    NarisuvaiKartaOtSimvoli( c2zero, IgralnoPole, IgralnoPoleRazmer, colWhite, 1 + 11 * 16 );
     int sega = SYS_RealTime();
     int deltaVreme = sega - x_predishnoVreme;
-    MestiNadolu( deltaVreme );
-    NarisuvaiKartaOtSimvoli( x_poziciaNaAktivnataFigura, FigCherta, FigChertaRazmer, colGreen, 1 );
+    // ako ne moga da se premestia nadolu...
+    if ( ! MestiNadolu( deltaVreme ) ) {
+        // ... togava kopirai aktivnata figura varhu igralnoto pole
+        KopiraiKartaVDrugaKarta( FigCherta, FigChertaRazmer, IgralnoPole, IgralnoPoleRazmer, x_poziciaNaAktivnataFigura );
+        // ... i napravi nova figura
+        InicializiraiAktivnaFigura();
+    } else {
+        NarisuvaiKartaOtSimvoli( x_poziciaNaAktivnataFigura, FigCherta, FigChertaRazmer, colGreen );
+    }
+    // narisuvai igralnoto pole izpolzvaiki funkciata za risuvane na karta ot simvoli
+    NarisuvaiKartaOtSimvoli( c2zero, IgralnoPole, IgralnoPoleRazmer, colWhite );
     // narisuvai tablicata sas simvoli v desnia agal na ekrana
     v2_t windowSize = R_GetWindowSize();
     DrawASCIITexture( v2xy( windowSize.x - ASCIITextureSize.x, 0 ) );
