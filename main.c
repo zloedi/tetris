@@ -91,7 +91,7 @@ char IgralnoPole[] =
 "#          #"
 "############"
 ;
-                      
+
 const c2_t FigChertaRazmer = { .x = 4, .y = 4 };
 const char *FigCherta =
 " @  "
@@ -115,6 +115,130 @@ const char *FigZ =
 "## "
 "#  "
 ;
+
+typedef struct {
+    c2_t razmer;
+    const char *karti[4];
+    int aktivnaKarta;
+    int broiKarti;
+} figura_t;
+
+static figura_t x_figuri[] = {
+    {
+        .razmer = { .x = 4, .y = 4 },
+        .broiKarti = 2,
+        .karti = {
+            " @  "
+            " @  "
+            " @  "
+            " @  "
+            ,
+            "    "
+            "@@@@"
+            "    "
+            "    "
+        },
+    },
+    {
+        .razmer = { .x = 3, .y = 3 },
+        .broiKarti = 2,
+        .karti = {
+            "   "
+            "@@ "
+            " @@"
+            ,
+            " @ "
+            "@@ "
+            "@  "
+        },
+    },
+    {
+        .razmer = { .x = 3, .y = 3 },
+        .broiKarti = 2,
+        .karti = {
+            "   "
+            " @@"
+            "@@ "
+            ,
+            "@  "
+            "@@ "
+            " @ "
+        },
+    },
+    {
+        .razmer = { .x = 2, .y = 2 },
+        .broiKarti = 1,
+        .karti = {
+            "@@"
+            "@@"
+        },
+    },
+    {
+        .razmer = { .x = 3, .y = 3 },
+        .broiKarti = 3,
+        .karti = {
+            "   "
+            "@@@"
+            " @ "
+            ,
+            " @ "
+            "@@ "
+            " @ "
+            ,
+            " @ "
+            "@@@"
+            "   "
+            ,
+            " @ "
+            " @@"
+            " @ "
+        },
+    },
+    {
+        .razmer = { .x = 3, .y = 3 },
+        .broiKarti = 4,
+        .karti = {
+            " @@"
+            " @ "
+            " @ "
+            ,
+            "   "
+            "@@@"
+            "  @"
+            ,
+            " @ "
+            " @ "
+            "@@ "
+            ,
+            "@  "
+            "@@@"
+            "   "
+        },
+    },
+    {
+        .razmer = { .x = 3, .y = 3 },
+        .broiKarti = 4,
+        .karti = {
+            "@@ "
+            " @ "
+            " @ "
+            ,
+            "  @"
+            "@@@"
+            "   "
+            ,
+            " @ "
+            " @ "
+            " @@"
+            ,
+            "   "
+            "@@@"
+            "@  "
+        },
+    },
+};
+
+static const int x_broiFiguri = sizeof( x_figuri ) / sizeof( *x_figuri );
 
 static c2_t x_poziciaNaAktivnataFigura;
 static int x_predishnoVreme;
@@ -206,7 +330,7 @@ static c2_t FixedToInt( c2_t c ) {
 }
 
 static void InicializiraiAktivnaFigura( void ) {
-    x_poziciaNaAktivnataFigura = IntToFixed( c2xy( IgralnoPoleRazmer.x / 2 - 2, -FigChertaRazmer.y ) );
+    x_poziciaNaAktivnataFigura = IntToFixed( c2xy( IgralnoPoleRazmer.x / 2 - 2, -FigChertaRazmer.y + 1 ) );
     x_predishnoVreme = SYS_RealTime();
     x_butonNadolu = 0;
 }
@@ -226,27 +350,15 @@ static bool_t MestiNadolu( int deltaVreme ) {
 }
 
 static void PraviKadar( void ) {
-    // izchisli goleminata na simvolite/spraitove
-    // simvoli i spraitove v tozi sa vzaimnozameniaemi
-    PixelSize = Maxi( R_GetWindowSize().y / 320, 1 );
     int sega = SYS_RealTime();
     int deltaVreme = sega - x_predishnoVreme;
-    // ako ne moga da se premestia nadolu...
     if ( ! MestiNadolu( deltaVreme ) ) {
-        // ... togava kopirai aktivnata figura varhu igralnoto pole
         KopiraiKartaVDrugaKarta( FigCherta, FigChertaRazmer, IgralnoPole, IgralnoPoleRazmer, FixedToInt( x_poziciaNaAktivnataFigura ) );
-        // ... i napravi nova figura
         InicializiraiAktivnaFigura();
     } else {
         NarisuvaiKartaOtSimvoli( FixedToInt( x_poziciaNaAktivnataFigura ), FigCherta, FigChertaRazmer, colGreen );
     }
-    // narisuvai igralnoto pole izpolzvaiki funkciata za risuvane na karta ot simvoli
-    NarisuvaiKartaOtSimvoli( c2zero, IgralnoPole, IgralnoPoleRazmer, colWhite );
-    // narisuvai tablicata sas simvoli v desnia agal na ekrana
-    v2_t windowSize = R_GetWindowSize();
-    DrawASCIITexture( v2xy( windowSize.x - ASCIITextureSize.x, 0 ) );
     x_predishnoVreme = sega;
-    SDL_Delay( 10 );
 }
 
 static void MestiNadiasno_f( void ) {
@@ -272,7 +384,20 @@ static void RegistriraiKomandi( void ) {
     I_Bind( "Down", "mestiNadolu" );
 }
 
+static void AppFrame( void ) {
+    // izchisli goleminata na simvolite/spraitove
+    // simvoli i spraitove v tozi sa vzaimnozameniaemi
+    PixelSize = Maxi( R_GetWindowSize().y / 320, 1 );
+    PraviKadar();
+    // narisuvai igralnoto pole izpolzvaiki funkciata za risuvane na karta ot simvoli
+    NarisuvaiKartaOtSimvoli( c2zero, IgralnoPole, IgralnoPoleRazmer, colWhite );
+    // narisuvai tablicata sas simvoli v desnia agal na ekrana
+    v2_t windowSize = R_GetWindowSize();
+    DrawASCIITexture( v2xy( windowSize.x - ASCIITextureSize.x, 0 ) );
+    SDL_Delay( 10 );
+}
+
 int main( int argc, char *argv[] ) {
-    UT_RunApp( "tetris", RegistriraiKomandi, Init, PraviKadar, NULL, 0 );
+    UT_RunApp( "tetris", RegistriraiKomandi, Init, AppFrame, NULL, 0 );
     return 0;
 }
