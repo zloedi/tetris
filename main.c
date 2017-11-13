@@ -36,8 +36,6 @@ static void Init( void ) {
 TODO
 Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
 Kogato figurite padnat na danoto na poleto i ochertaiat linia s ostatacite na drugite figuri, zapalneniat red se unishtojava.
-Igrachat moje da varti aktivnata figura sas strelka nagore.
-    Izpolzvaiki gorna strelka
 Igrata stava po-barza/vdiga se nivoto sled n na broi unishtojeni redove.
 Ako figurata ne moje da bade mestena dokato e chastichno izvan poleto, igrata e zagubena
 Figurite sa s razlichna forma.
@@ -47,13 +45,19 @@ Bonus tochki se davat za ednovremenno unidhtojeni mnojestvo redove.
 Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
 
 IN PROGRESS
-Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
+
+Igrachat moje da varti aktivnata figura sas strelka nagore.
+    Izpolzvaiki gorna strelka
+
+DONE
+
+Mon Nov 13 16:10:20 EET 2017
+
+* Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
     * Proverka dali figura e na danoto (ne moje da se manipulira poveche).
     * Kopirane na starata figura varhu igralnoto pole. 
     * Sazdavene na nova figura.
-    Figurite sa s razlichna forma.
-
-DONE
+    * Figurite sa s razlichna forma.
 
 Tue Sep 12 16:16:19 EEST 2017
 
@@ -97,10 +101,8 @@ typedef struct {
     c2_t size;
     int numBitmaps;
     const char *bitmaps[4];
-    int curBitmap;
 } figure_t;
 
-static int x_currentFigure;
 static figure_t x_figures[] = {
     {
         .size = { .x = 4, .y = 4 },
@@ -153,7 +155,7 @@ static figure_t x_figures[] = {
     },
     {
         .size = { .x = 3, .y = 3 },
-        .numBitmaps = 3,
+        .numBitmaps = 4,
         .bitmaps = {
             "   "
             "@@@"
@@ -180,17 +182,17 @@ static figure_t x_figures[] = {
             " @ "
             " @ "
             ,
-            "   "
+            "@  "
             "@@@"
-            "  @"
+            "   "
             ,
             " @ "
             " @ "
             "@@ "
             ,
-            "@  "
-            "@@@"
             "   "
+            "@@@"
+            "  @"
         },
     },
     {
@@ -201,25 +203,27 @@ static figure_t x_figures[] = {
             " @ "
             " @ "
             ,
-            "  @"
-            "@@@"
             "   "
+            "@@@"
+            "@  "
             ,
             " @ "
             " @ "
             " @@"
             ,
-            "   "
+            "  @"
             "@@@"
-            "@  "
+            "   "
         },
     },
 };
 
 static const int x_numFigures = sizeof( x_figures ) / sizeof( *x_figures );
 
+static int x_currentFigure;
+static int x_currentBitmap;
 static c2_t x_currentPos;
-static int x_predishnoVreme;
+static int x_prevTime;
 static int x_speed = 64;
 static int x_buttonDown;
 
@@ -300,16 +304,17 @@ static c2_t FixedToInt( c2_t c ) {
 }
 
 static void PickFigureAndReset( void ) {
+    x_currentBitmap = 0;
     x_currentFigure = COM_Rand() % x_numFigures;
     figure_t *curFig = &x_figures[x_currentFigure];
     x_currentPos = IntToFixed( c2xy( x_boardSize.x / 2 - 2, -curFig->size.y + 1 ) );
-    x_predishnoVreme = SYS_RealTime();
+    x_prevTime = SYS_RealTime();
     x_buttonDown = 0;
 }
 
 static void GetCurrentBitmap( const char **outBmp, c2_t *outBmpSz ) {
     figure_t *curFigure = &x_figures[x_currentFigure];
-    *outBmp = curFigure->bitmaps[curFigure->curBitmap];
+    *outBmp = curFigure->bitmaps[x_currentBitmap];
     *outBmpSz = curFigure->size;
 }
 
@@ -338,9 +343,9 @@ static void Stop( void ) {
 }
 
 static void GameUpdate( void ) {
-    int sega = SYS_RealTime();
-    int deltaVreme = sega - x_predishnoVreme;
-    if ( ! TryMoveDown( deltaVreme ) ) {
+    int now = SYS_RealTime();
+    int deltaTime = now - x_prevTime;
+    if ( ! TryMoveDown( deltaTime ) ) {
         Stop();
         PickFigureAndReset();
     } else {
@@ -349,7 +354,7 @@ static void GameUpdate( void ) {
         GetCurrentBitmap( &bmp, &bmpSz );
         DrawBitmap( FixedToInt( x_currentPos ), bmp, bmpSz, colGreen );
     }
-    x_predishnoVreme = sega;
+    x_prevTime = now;
 }
 
 static void MestiNadiasno_f( void ) {
@@ -362,6 +367,16 @@ static void MoveLeft_f( void ) {
     TryMove( nextPos );
 }
 
+static void Rotate_f( void ) {
+    figure_t *curFigure = &x_figures[x_currentFigure];
+    int bmpIdx = ( x_currentBitmap + 1 ) % curFigure->numBitmaps;
+    const char *bmp = curFigure->bitmaps[bmpIdx];
+    if ( ! IsBitmapClipping( FixedToInt( x_currentPos ), bmp, curFigure->size ) ) {
+        x_currentBitmap = bmpIdx;
+    }
+ 
+}
+
 static void MoveDown_f( void ) {
     x_buttonDown = *CMD_Argv( 0 ) == '+' ? 1 : 0;
 }
@@ -370,9 +385,11 @@ static void RegistriraiKomandi( void ) {
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "mestiNadiasno", MestiNadiasno_f );
     CMD_Register( "moveDown", MoveDown_f );
+    CMD_Register( "rotate", Rotate_f );
     I_Bind( "Left", "+moveLeft" );
     I_Bind( "Right", "+mestiNadiasno" );
     I_Bind( "Down", "moveDown" );
+    I_Bind( "Up", "+rotate" );
 }
 
 static void AppFrame( void ) {
