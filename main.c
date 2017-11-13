@@ -11,7 +11,7 @@ static void DrawASCIITexture( v2_t position ) {
     R_BlendPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
 }
 
-static void NarisuvaiSimvol( c2_t position, int symbol ) {
+static void DrawTile( c2_t position, int symbol ) {
     v2_t st0 = v2xy( ( symbol & 15 ) * ASCIISymbolSize.x, ( symbol / 16 ) * ASCIISymbolSize.y );
     v2_t st1 = v2Add( st0, ASCIISymbolSize );
     st0 = v2xy( st0.x / ASCIITextureSize.x, st0.y / ASCIITextureSize.y );
@@ -34,8 +34,6 @@ static void Init( void ) {
 /*
 
 TODO
-Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
-Kogato figurite padnat na danoto na poleto i ochertaiat linia s ostatacite na drugite figuri, zapalneniat red se unishtojava.
 Igrata stava po-barza/vdiga se nivoto sled n na broi unishtojeni redove.
 Ako figurata ne moje da bade mestena dokato e chastichno izvan poleto, igrata e zagubena
 Figurite sa s razlichna forma.
@@ -46,12 +44,14 @@ Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
 
 IN PROGRESS
 
-Igrachat moje da varti aktivnata figura sas strelka nagore.
-    Izpolzvaiki gorna strelka
-
 DONE
 
 Mon Nov 13 16:10:20 EET 2017
+
+* Kogato figurite padnat na danoto na poleto i ochertaiat linia s ostatacite na drugite figuri, zapalneniat red se unishtojava.
+
+* Igrachat moje da varti aktivnata figura sas strelka nagore.
+*     Izpolzvaiki gorna strelka
 
 * Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
     * Proverka dali figura e na danoto (ne moje da se manipulira poveche).
@@ -162,7 +162,7 @@ static figure_t x_figures[] = {
             " @ "
             ,
             " @ "
-            "@@ "
+            " @@"
             " @ "
             ,
             " @ "
@@ -170,7 +170,7 @@ static figure_t x_figures[] = {
             "   "
             ,
             " @ "
-            " @@"
+            "@@ "
             " @ "
         },
     },
@@ -226,6 +226,7 @@ static c2_t x_currentPos;
 static int x_prevTime;
 static int x_speed = 64;
 static int x_buttonDown;
+static int x_numErasedLines;
 
 static int ReadTile( c2_t pos, const char *bmp, c2_t bmpSz ) {
     if ( pos.x >= 0 && pos.x < bmpSz.x
@@ -274,7 +275,7 @@ static void DrawBitmap( c2_t screenPos, const char *bitmap, c2_t razmerNaKarta, 
     for ( int i = 0, y = 0; y < razmerNaKarta.y; y++ ) {
         for ( int x = 0; x < razmerNaKarta.x; x++ ) {
             int tile = bitmap[i++];
-            NarisuvaiSimvol( c2Add( c2xy( x, y ), screenPos ), remap[tile] );
+            DrawTile( c2Add( c2xy( x, y ), screenPos ), remap[tile] );
         }
     }
 }
@@ -342,11 +343,35 @@ static void Stop( void ) {
     CopyBitmap( bmp, bmpSz, x_board, x_boardSize, FixedToInt( x_currentPos ) );
 }
 
+static void EraseFilledLines( void ) {
+    for ( int y = x_boardSize.y - 2; y >= 1; ) {
+        int numFull = 0;
+        for ( int x = 0; x < x_boardSize.x; x++ ) {
+            int tile = ReadTile( c2xy( x, y ), x_board, x_boardSize );
+            if ( ! IsBlank( tile ) ) {
+                numFull++;
+            }
+        }
+        if ( numFull == x_boardSize.x ) {
+            x_numErasedLines++;
+            CON_Printf( "                                      Pop a line. TOTAL LINES: %d\n", x_numErasedLines );
+            for ( int i = y; i >= 1; i-- ) {
+                char *dst = &x_board[( i - 0 ) * x_boardSize.x];
+                char *src = &x_board[( i - 1 ) * x_boardSize.x];
+                memcpy( dst, src, x_boardSize.x );
+            }
+        } else {
+            y--;
+        }
+    }
+}
+
 static void GameUpdate( void ) {
     int now = SYS_RealTime();
     int deltaTime = now - x_prevTime;
     if ( ! TryMoveDown( deltaTime ) ) {
         Stop();
+        EraseFilledLines();
         PickFigureAndReset();
     } else {
         const char *bmp;
@@ -397,11 +422,10 @@ static void AppFrame( void ) {
     // simvoli i spraitove v tozi sa vzaimnozameniaemi
     PixelSize = Maxi( R_GetWindowSize().y / 320, 1 );
     GameUpdate();
-    // narisuvai igralnoto pole izpolzvaiki funkciata za risuvane na karta ot simvoli
     DrawBitmap( c2zero, x_board, x_boardSize, colWhite );
     // narisuvai tablicata sas simvoli v desnia agal na ekrana
     v2_t windowSize = R_GetWindowSize();
-    DrawASCIITexture( v2xy( windowSize.x - ASCIITextureSize.x, 0 ) );
+    //DrawASCIITexture( v2xy( windowSize.x - ASCIITextureSize.x, 0 ) );
     SDL_Delay( 10 );
 }
 
