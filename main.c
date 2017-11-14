@@ -170,6 +170,7 @@ static int PixelSize;
 static int x_currentShape;
 static int x_nextShape;
 static var_t *x_showAtlas;
+static var_t *x_hiscore;
 
 static void DrawAtlas( void ) {
     v2_t windowSize = R_GetWindowSize();
@@ -178,18 +179,23 @@ static void DrawAtlas( void ) {
     R_BlendPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
 }
 
-static void DrawTileKern( c2_t position, int symbol, float partx ) {
+static void DrawTileKern( c2_t position, int symbol, color_t color, float partx, int shadow ) {
     v2_t st0 = v2xy( ( symbol & 15 ) * ASCIISymbolSize.x, ( symbol / 16 ) * ASCIISymbolSize.y );
     v2_t st1 = v2Add( st0, ASCIISymbolSize );
     st0 = v2xy( st0.x / ASCIITextureSize.x, st0.y / ASCIITextureSize.y );
     st1 = v2xy( st1.x / ASCIITextureSize.x, st1.y / ASCIITextureSize.y );
     v2_t scale = v2Scale( ASCIISymbolSize, PixelSize );
     partx *= scale.x;
+    if ( shadow > 0 ) {
+        R_ColorC( colBlack );
+        R_BlendPicV2( v2xy( position.x * partx + shadow * PixelSize, position.y * scale.y + shadow * PixelSize), scale, st0, st1, ASCIITexture );
+    }
+    R_ColorC( color );
     R_BlendPicV2( v2xy( position.x * partx, position.y * scale.y ), scale, st0, st1, ASCIITexture );
 }
 
-static void DrawTile( c2_t position, int symbol ) {
-    DrawTileKern( position, symbol, 1 );
+static void DrawTile( c2_t position, int symbol, color_t color ) {
+    DrawTileKern( position, symbol, color, 1, 0 );
 }
 
 static void PickShapeAndReset( void );
@@ -271,6 +277,7 @@ static int x_prevTime;
 static int x_speed = INITIAL_SPEED;
 static int x_buttonDown;
 static int x_numErasedLines;
+static int x_score;
 
 static int ReadTile( c2_t pos, const char *bmp, c2_t bmpSz ) {
     if ( pos.x >= 0 && pos.x < bmpSz.x
@@ -318,11 +325,10 @@ static void DrawBitmap( c2_t screenPos, const char *bitmap, c2_t razmerNaKarta, 
         ['@'] = 1,
         ['#'] = 1 + 11 * 16,
     };
-    R_ColorC( color );
     for ( int i = 0, y = 0; y < razmerNaKarta.y; y++ ) {
         for ( int x = 0; x < razmerNaKarta.x; x++ ) {
             int tile = bitmap[i++];
-            DrawTile( c2Add( c2xy( x, y ), screenPos ), remap[tile] );
+            DrawTile( c2Add( c2xy( x, y ), screenPos ), remap[tile], color );
         }
     }
 }
@@ -332,7 +338,7 @@ static void Print( c2_t pos, const char *string, color_t color ) {
     float part = 0.65f;
     pos.x /= part;
     for ( const char *p = string; *p; p++ ) {
-        DrawTileKern( pos, *p, part );
+        DrawTileKern( pos, *p, color, part, 1 );
         pos.x++;
     }
 }
@@ -396,10 +402,12 @@ static bool_t TryMoveDown( int deltaTime ) {
 static bool_t Drop( void ) {
     CopyBitmap( GetCurrentBitmap(), x_shapeSize, x_board, x_boardSize, FixedToInt( x_currentPos ) );
     Mix_PlayChannel( -1, x_soundThud, 0 );
+    x_score += x_speed / 2;
     return x_currentPos.y + x_shapeSize.y >= 0;
 }
 
 static void EraseFilledLines( void ) {
+    int bonus = 1;
     bool_t result = false;
     for ( int y = x_boardSize.y - 2; y >= 1; ) {
         int numFull = 0;
@@ -412,6 +420,7 @@ static void EraseFilledLines( void ) {
         if ( numFull == x_boardSize.x ) {
             result = true;
             x_numErasedLines++;
+            bonus *= 2;
             CON_Printf( "Pop a line. TOTAL LINES: %d\n", x_numErasedLines );
             for ( int i = y; i >= 1; i-- ) {
                 char *dst = &x_board[( i - 0 ) * x_boardSize.x];
@@ -423,6 +432,7 @@ static void EraseFilledLines( void ) {
         }
     }
     if ( result ) {
+        x_score += bonus * x_speed * 4;
         Mix_PlayChannel( -1, x_soundPop, 0 );
     }
 }
@@ -431,10 +441,17 @@ static void GameUpdate( void ) {
     int now = SYS_RealTime();
     int deltaTime = now - x_prevTime;
     if ( x_gameOver ) {
+        if ( VAR_Num( x_hiscore ) < x_score ) {
+            VAR_Set( x_hiscore, va( "%d", x_score ), false );
+        }
+        DrawBitmap( c2zero, x_board, x_boardSize, colWhite );
+        Print( c2xy( x_boardSize.x / 2 - 3, x_boardSize.y / 2 - 1 ), "GAME OVER", colRed );
+        if ( now & 256 ) { 
+            Print( c2xy( x_boardSize.x / 2 - 4, x_boardSize.y / 2 ), "Press 'Space'", colRed );
+        }
     } else {
         if ( ! TryMoveDown( deltaTime ) ) {
             if ( ! Drop() ) {
-                CON_Printf( "GAME OVER!\n" );
                 x_gameOver = true;
             } else {
                 EraseFilledLines();
@@ -448,11 +465,15 @@ static void GameUpdate( void ) {
         } else {
             DrawBitmap( FixedToInt( x_currentPos ), GetCurrentBitmap(), x_shapeSize, colGreen );
         }
+        DrawBitmap( c2zero, x_board, x_boardSize, colWhite );
     }
     Print( c2xy( x_boardSize.x + 1, 1 ), "NEXT", colCyan );
     shape_t *nextShape = &x_shapes[x_nextShape];
-    DrawBitmap( c2xy( x_boardSize.x + 1, 2 ), nextShape->bitmaps[0], x_shapeSize, colCyan );
-    DrawBitmap( c2zero, x_board, x_boardSize, colWhite );
+    DrawBitmap( c2xy( x_boardSize.x + 1, 2 ), nextShape->bitmaps[0], x_shapeSize, colGreen );
+    Print( c2xy( x_boardSize.x + 1, 7 ), "SCORE", colCyan );
+    Print( c2xy( x_boardSize.x + 1, 8 ), va( "%d", x_score ), colWhite );
+    Print( c2xy( x_boardSize.x + 1, 10 ), "HISCORE", colCyan );
+    Print( c2xy( x_boardSize.x + 1, 11 ), va( "%d", ( int )VAR_Num( x_hiscore ) ), colWhite );
     x_prevTime = now;
 }
 
@@ -503,6 +524,8 @@ static void Restart_f( void ) {
         x_gameOver = false;
         x_speed = INITIAL_SPEED;
         x_numErasedLines = 0;
+        x_nextShape = GetRandomShape();
+        x_score = 0;
         ClearBoard();
         PickShapeAndReset();
     }
@@ -510,6 +533,7 @@ static void Restart_f( void ) {
 
 static void RegisterVars( void ) {
     x_showAtlas = VAR_Register( "showAtlas", "0" );
+    x_hiscore = VAR_Register( "hiscore", "0" );
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
