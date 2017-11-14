@@ -50,109 +50,109 @@ static shape_t x_shapes[] = {
     {
         .numBitmaps = 2,
         .bitmaps = {
+            "    "
             "@@  "
             " @@ "
             "    "
-            "    "
             ,
+            "    "
             "  @ "
             " @@ "
             " @  "
-            "    "
         },
     },
     {
         .numBitmaps = 2,
         .bitmaps = {
+            "    "
             "  @@"
             " @@ "
             "    "
-            "    "
             , 
+            "    "
             " @  "
             " @@ "
             "  @ "
-            "    "
         },
     },
     {
         .numBitmaps = 1,
         .bitmaps = {
-            " @@ "
-            " @@ "
             "    "
             "    "
+            " @@ "
+            " @@ "
         },
     },
     {
         .numBitmaps = 4,
         .bitmaps = {
             "    "
+            "    "
             " @@@"
             "  @ "
-            "    "
             , 
+            "    "
             "  @ "
             "  @@"
             "  @ "
-            "    "
             , 
+            "    "
             "  @ "
             " @@@"
             "    "
-            "    "
             , 
+            "    "
             "  @ "
             " @@ "
             "  @ "
-            "    "
         },
     },
     {
         .numBitmaps = 4,
         .bitmaps = {
+            "    "
             " @@ "
             " @  "
             " @  "
-            "    "
             , 
+            "    "
             "@   "
             "@@@ "
             "    "
-            "    "
             , 
+            "    "
             " @  "
             " @  "
             "@@  "
-            "    "
             , 
+            "    "
             "    "
             "@@@ "
             "  @ "
-            "    "
         },
     },
     {
         .numBitmaps = 4,
         .bitmaps = {
+            "    "
             " @@ "
             "  @ "
             "  @ "
-            "    "
             ,
+            "    "
             "    "
             " @@@"
             " @  "
-            "    "
             ,
+            "    "
             "  @ "
             "  @ "
             "  @@"
-            "    "
             ,
+            "    "
             "   @"
             " @@@"
-            "    "
             "    "
         },
     },
@@ -220,6 +220,7 @@ static void Init( void ) {
 
 TODO
 Bonus tochki se davat za ednovremenno unidhtojeni mnojestvo redove.
+Hiscore
 
 IN PROGRESS
 
@@ -266,7 +267,7 @@ Tue Sep 12 16:16:19 EEST 2017
 static int x_currentBitmap;
 static c2_t x_currentPos;
 static int x_prevTime;
-#define INITIAL_SPEED 64
+#define INITIAL_SPEED 40
 static int x_speed = INITIAL_SPEED;
 static int x_buttonDown;
 static int x_numErasedLines;
@@ -279,8 +280,11 @@ static int ReadTile( c2_t pos, const char *bmp, c2_t bmpSz ) {
     return ' ';
 }
 
-static int ReadTileOnBoard( c2_t pozicia ) {
-    return ReadTile( pozicia, x_board, x_boardSize );
+static int ReadTileOnBoard( c2_t pos ) {
+    if ( pos.x <= 0 || pos.x >= x_boardSize.x - 1 ) {
+        return '#';
+    }
+    return ReadTile( pos, x_board, x_boardSize );
 }
 
 static void CopyTile( int tile, c2_t pos, char *bmp, c2_t bmpSz )
@@ -333,13 +337,13 @@ static void Print( c2_t pos, const char *string, color_t color ) {
     }
 }
 
-static bool_t IsBitmapClipping( c2_t boardPos, const char *bmp ) {
+static bool_t IsBitmapClipping( c2_t posOnBoard, const char *bmp ) {
     for ( int y = 0; y < x_shapeSize.y; y++ ) {
         for ( int x = 0; x < x_shapeSize.x; x++ ) {
             c2_t pos = c2xy( x, y );
             int tile = ReadTile( pos, bmp, x_shapeSize );
             if ( ! IsBlank( tile ) ) {
-                int tileOnBoard = ReadTileOnBoard( c2Add( pos, boardPos ) );
+                int tileOnBoard = ReadTileOnBoard( c2Add( pos, posOnBoard ) );
                 if ( ! IsBlank( tileOnBoard ) ) {
                     return true;
                 }
@@ -372,7 +376,7 @@ static void PickShapeAndReset( void ) {
     x_nextShape = GetRandomShape();
     x_currentPos = IntToFixed( c2xy( x_boardSize.x / 2 - 2, -x_shapeSize.y + 1 ) );
     x_prevTime = SYS_RealTime();
-    x_buttonDown = 0;
+    x_buttonDown = x_buttonDown ? -1 : 0;
 }
 
 static bool_t TryMove( c2_t nextPos ) {
@@ -384,7 +388,7 @@ static bool_t TryMove( c2_t nextPos ) {
 }
 
 static bool_t TryMoveDown( int deltaTime ) {
-    int y = x_currentPos.y + deltaTime * x_speed * ( 1 + x_buttonDown * 3 ) / 100;
+    int y = x_currentPos.y + deltaTime * x_speed * ( 1 + Maxi( x_buttonDown, 0 ) * 6 ) / 100;
     c2_t nextPos = c2xy( x_currentPos.x, y );
     return TryMove( nextPos );
 }
@@ -392,7 +396,7 @@ static bool_t TryMoveDown( int deltaTime ) {
 static bool_t Drop( void ) {
     CopyBitmap( GetCurrentBitmap(), x_shapeSize, x_board, x_boardSize, FixedToInt( x_currentPos ) );
     Mix_PlayChannel( -1, x_soundThud, 0 );
-    return x_currentPos.y >= 0;
+    return x_currentPos.y + x_shapeSize.y >= 0;
 }
 
 static void EraseFilledLines( void ) {
@@ -445,9 +449,9 @@ static void GameUpdate( void ) {
             DrawBitmap( FixedToInt( x_currentPos ), GetCurrentBitmap(), x_shapeSize, colGreen );
         }
     }
-    Print( c2xy( x_boardSize.x + 1, 1 ), "Next:", colCyan );
+    Print( c2xy( x_boardSize.x + 1, 1 ), "NEXT", colCyan );
     shape_t *nextShape = &x_shapes[x_nextShape];
-    DrawBitmap( c2xy( x_boardSize.x + 1, 3 ), nextShape->bitmaps[0], x_shapeSize, colCyan );
+    DrawBitmap( c2xy( x_boardSize.x + 1, 2 ), nextShape->bitmaps[0], x_shapeSize, colCyan );
     DrawBitmap( c2zero, x_board, x_boardSize, colWhite );
     x_prevTime = now;
 }
@@ -474,7 +478,18 @@ static void Rotate_f( void ) {
 }
 
 static void MoveDown_f( void ) {
-    x_buttonDown = *CMD_Argv( 0 ) == '+' ? 1 : 0;
+    int down = *CMD_Argv( 0 ) == '+';
+    if ( down == x_buttonDown ) {
+        return;
+    }
+    if ( x_buttonDown == -1 && down ) {
+        // waiting for release
+        return;
+    }
+    if ( down ) {
+        Mix_PlayChannel( -1, x_soundShift, 0 );
+    }
+    x_buttonDown = down;
 }
 
 static void ClearBoard( void ) {
@@ -487,6 +502,7 @@ static void Restart_f( void ) {
     if ( x_gameOver ) {
         x_gameOver = false;
         x_speed = INITIAL_SPEED;
+        x_numErasedLines = 0;
         ClearBoard();
         PickShapeAndReset();
     }
