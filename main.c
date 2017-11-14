@@ -25,15 +25,15 @@ char x_board[] =
 "############"
 ;
 
+const c2_t x_shapeSize = { .x = 4, .y = 4 };
+
 typedef struct {
-    c2_t size;
     int numBitmaps;
     const char *bitmaps[4];
-} figure_t;
+} shape_t;
 
-static figure_t x_figures[] = {
+static shape_t x_shapes[] = {
     {
-        .size = { .x = 4, .y = 4 },
         .numBitmaps = 2,
         .bitmaps = {
             " @  "
@@ -48,105 +48,117 @@ static figure_t x_figures[] = {
         },
     },
     {
-        .size = { .x = 3, .y = 3 },
         .numBitmaps = 2,
         .bitmaps = {
-            "   "
-            "@@ "
-            " @@"
+            "    "
+            "@@  "
+            " @@ "
+            "    "
             ,
-            " @ "
-            "@@ "
-            "@  "
+            "    "
+            "  @ "
+            " @@ "
+            " @  "
         },
     },
     {
-        .size = { .x = 3, .y = 3 },
         .numBitmaps = 2,
         .bitmaps = {
-            "   "
-            " @@"
-            "@@ "
-            ,
-            "@  "
-            "@@ "
-            " @ "
+            "    "
+            "  @@"
+            " @@ "
+            "    "
+            , 
+            "    "
+            " @  "
+            " @@ "
+            "  @ "
         },
     },
     {
-        .size = { .x = 2, .y = 2 },
         .numBitmaps = 1,
         .bitmaps = {
-            "@@"
-            "@@"
+            "    "
+            " @@ "
+            " @@ "
+            "    "
         },
     },
     {
-        .size = { .x = 3, .y = 3 },
         .numBitmaps = 4,
         .bitmaps = {
-            "   "
-            "@@@"
-            " @ "
-            ,
-            " @ "
-            " @@"
-            " @ "
-            ,
-            " @ "
-            "@@@"
-            "   "
-            ,
-            " @ "
-            "@@ "
-            " @ "
+            "    "
+            " @@@"
+            "  @ "
+            "    "
+            , 
+            "  @ "
+            "  @@"
+            "  @ "
+            "    "
+            , 
+            "  @ "
+            " @@@"
+            "    "
+            "    "
+            , 
+            "  @ "
+            " @@ "
+            "  @ "
+            "    "
         },
     },
     {
-        .size = { .x = 3, .y = 3 },
         .numBitmaps = 4,
         .bitmaps = {
-            " @@"
-            " @ "
-            " @ "
-            ,
-            "@  "
-            "@@@"
-            "   "
-            ,
-            " @ "
-            " @ "
-            "@@ "
-            ,
-            "   "
-            "@@@"
-            "  @"
+            " @@ "
+            " @  "
+            " @  "
+            "    "
+            , 
+            "@   "
+            "@@@ "
+            "    "
+            "    "
+            , 
+            " @  "
+            " @  "
+            "@@  "
+            "    "
+            , 
+            "    "
+            "@@@ "
+            "  @ "
+            "    "
         },
     },
     {
-        .size = { .x = 3, .y = 3 },
         .numBitmaps = 4,
         .bitmaps = {
-            "@@ "
-            " @ "
-            " @ "
+            " @@ "
+            "  @ "
+            "  @ "
+            "    "
             ,
-            "   "
-            "@@@"
-            "@  "
+            "    "
+            " @@@"
+            " @  "
+            "    "
             ,
-            " @ "
-            " @ "
-            " @@"
+            "  @ "
+            "  @ "
+            "  @@"
+            "    "
             ,
-            "  @"
-            "@@@"
-            "   "
+            "   @"
+            " @@@"
+            "    "
+            "    "
         },
     },
 };
 
-static const int x_numFigures = sizeof( x_figures ) / sizeof( *x_figures );
+static const int x_numShapes = sizeof( x_shapes ) / sizeof( *x_shapes );
 static Mix_Chunk *x_soundPop;
 static Mix_Chunk *x_soundThud;
 static Mix_Chunk *x_soundShift;
@@ -155,8 +167,8 @@ static rImage_t *ASCIITexture;
 static v2_t ASCIITextureSize;
 static v2_t ASCIISymbolSize;
 static int PixelSize;
-static int x_currentFigure;
-static int x_nextFigure;
+static int x_currentShape;
+static int x_nextShape;
 static var_t *x_showAtlas;
 
 static void DrawAtlas( void ) {
@@ -180,14 +192,14 @@ static void DrawTile( c2_t position, int symbol ) {
     DrawTileKern( position, symbol, 1 );
 }
 
-static bool_t PickFigureAndReset( void );
+static void PickShapeAndReset( void );
 
 static const char* GetAssetPath( const char *name ) {
     return va( "%sdata/%s", SYS_BaseDir(), name );
 }
 
-static int GetRandomFigure( void ) {
-    return COM_Rand() % x_numFigures;
+static int GetRandomShape( void ) {
+    return COM_Rand() % x_numShapes;
 }
 
 static void Init( void ) {
@@ -198,8 +210,8 @@ static void Init( void ) {
     Mix_VolumeChunk( x_soundShift, MIX_MAX_VOLUME / 2 );
     ASCIITexture = R_LoadStaticTextureEx( "cp437_12x12.png", &ASCIITextureSize );
     ASCIISymbolSize = v2Scale( ASCIITextureSize, 1 / 16. );
-    x_nextFigure = GetRandomFigure();
-    PickFigureAndReset();
+    x_nextShape = GetRandomShape();
+    PickShapeAndReset();
 }
 
 //==============================================================================================
@@ -321,11 +333,11 @@ static void Print( c2_t pos, const char *string, color_t color ) {
     }
 }
 
-static bool_t IsBitmapClipping( c2_t boardPos, const char *bmp, c2_t bmpSize ) {
-    for ( int y = 0; y < bmpSize.y; y++ ) {
-        for ( int x = 0; x < bmpSize.x; x++ ) {
+static bool_t IsBitmapClipping( c2_t boardPos, const char *bmp ) {
+    for ( int y = 0; y < x_shapeSize.y; y++ ) {
+        for ( int x = 0; x < x_shapeSize.x; x++ ) {
             c2_t pos = c2xy( x, y );
-            int tile = ReadTile( pos, bmp, bmpSize );
+            int tile = ReadTile( pos, bmp, x_shapeSize );
             if ( ! IsBlank( tile ) ) {
                 int tileOnBoard = ReadTileOnBoard( c2Add( pos, boardPos ) );
                 if ( ! IsBlank( tileOnBoard ) ) {
@@ -345,28 +357,22 @@ static c2_t FixedToInt( c2_t c ) {
     return c2RShifts( c, 8 );
 }
 
-static void GetCurrentBitmap( const char **outBmp, c2_t *outBmpSz ) {
-    figure_t *curFigure = &x_figures[x_currentFigure];
-    *outBmp = curFigure->bitmaps[x_currentBitmap];
-    *outBmpSz = curFigure->size;
+static const char* GetCurrentBitmap( void ) {
+    shape_t *curShape = &x_shapes[x_currentShape];
+    return curShape->bitmaps[x_currentBitmap];
 }
 
 static bool_t IsCurrentBitmapClipping( c2_t fixedPointPos ) {
-    const char *bmp;
-    c2_t bmpSz;
-    GetCurrentBitmap( &bmp, &bmpSz );
-    return IsBitmapClipping( FixedToInt( fixedPointPos ), bmp, bmpSz );
+    return IsBitmapClipping( FixedToInt( fixedPointPos ), GetCurrentBitmap() );
 }
 
-static bool_t PickFigureAndReset( void ) {
+static void PickShapeAndReset( void ) {
     x_currentBitmap = 0;
-    x_currentFigure = x_nextFigure;
-    x_nextFigure = GetRandomFigure();
-    figure_t *curFig = &x_figures[x_currentFigure];
-    x_currentPos = IntToFixed( c2xy( x_boardSize.x / 2 - 2, -curFig->size.y + 1 ) );
+    x_currentShape = x_nextShape;
+    x_nextShape = GetRandomShape();
+    x_currentPos = IntToFixed( c2xy( x_boardSize.x / 2 - 2, -x_shapeSize.y + 1 ) );
     x_prevTime = SYS_RealTime();
     x_buttonDown = 0;
-    return ! IsCurrentBitmapClipping( x_currentPos );
 }
 
 static bool_t TryMove( c2_t nextPos ) {
@@ -383,12 +389,10 @@ static bool_t TryMoveDown( int deltaTime ) {
     return TryMove( nextPos );
 }
 
-static void Drop( void ) {
-    const char *bmp;
-    c2_t bmpSz;
-    GetCurrentBitmap( &bmp, &bmpSz );
-    CopyBitmap( bmp, bmpSz, x_board, x_boardSize, FixedToInt( x_currentPos ) );
+static bool_t Drop( void ) {
+    CopyBitmap( GetCurrentBitmap(), x_shapeSize, x_board, x_boardSize, FixedToInt( x_currentPos ) );
     Mix_PlayChannel( -1, x_soundThud, 0 );
+    return x_currentPos.y >= 0;
 }
 
 static void EraseFilledLines( void ) {
@@ -425,26 +429,25 @@ static void GameUpdate( void ) {
     if ( x_gameOver ) {
     } else {
         if ( ! TryMoveDown( deltaTime ) ) {
-            Drop();
-            EraseFilledLines();
-            if ( ! PickFigureAndReset() ) {
+            if ( ! Drop() ) {
                 CON_Printf( "GAME OVER!\n" );
                 x_gameOver = true;
-            } else if ( x_numErasedLines >= 10 ) {
-                CON_Printf( "SPEED UP!\n" );
-                x_numErasedLines = 0;
-                x_speed += x_speed / 4;
+            } else {
+                EraseFilledLines();
+                PickShapeAndReset();
+                if ( x_numErasedLines >= 10 ) {
+                    CON_Printf( "SPEED UP!\n" );
+                    x_numErasedLines = 0;
+                    x_speed += x_speed / 4;
+                }
             }
         } else {
-            const char *bmp;
-            c2_t bmpSz;
-            GetCurrentBitmap( &bmp, &bmpSz );
-            DrawBitmap( FixedToInt( x_currentPos ), bmp, bmpSz, colGreen );
+            DrawBitmap( FixedToInt( x_currentPos ), GetCurrentBitmap(), x_shapeSize, colGreen );
         }
     }
     Print( c2xy( x_boardSize.x + 1, 1 ), "Next:", colCyan );
-    figure_t *nextFigure = &x_figures[x_nextFigure];
-    DrawBitmap( c2xy( x_boardSize.x + 1, 3 ), nextFigure->bitmaps[0], nextFigure->size, colCyan );
+    shape_t *nextShape = &x_shapes[x_nextShape];
+    DrawBitmap( c2xy( x_boardSize.x + 1, 3 ), nextShape->bitmaps[0], x_shapeSize, colCyan );
     DrawBitmap( c2zero, x_board, x_boardSize, colWhite );
     x_prevTime = now;
 }
@@ -463,13 +466,11 @@ static void MoveLeft_f( void ) {
 
 static void Rotate_f( void ) {
     Mix_PlayChannel( -1, x_soundShift, 0 );
-    figure_t *curFigure = &x_figures[x_currentFigure];
-    int bmpIdx = ( x_currentBitmap + 1 ) % curFigure->numBitmaps;
-    const char *bmp = curFigure->bitmaps[bmpIdx];
-    if ( ! IsBitmapClipping( FixedToInt( x_currentPos ), bmp, curFigure->size ) ) {
+    shape_t *curShape = &x_shapes[x_currentShape];
+    int bmpIdx = ( x_currentBitmap + 1 ) % curShape->numBitmaps;
+    if ( ! IsBitmapClipping( FixedToInt( x_currentPos ), curShape->bitmaps[bmpIdx] ) ) {
         x_currentBitmap = bmpIdx;
     }
- 
 }
 
 static void MoveDown_f( void ) {
@@ -487,7 +488,7 @@ static void Restart_f( void ) {
         x_gameOver = false;
         x_speed = INITIAL_SPEED;
         ClearBoard();
-        PickFigureAndReset();
+        PickShapeAndReset();
     }
 }
 
@@ -506,7 +507,7 @@ static void RegisterVars( void ) {
 }
 
 static void AppFrame( void ) {
-    PixelSize = Maxi( R_GetWindowSize().y / 320, 1 );
+    PixelSize = Maxi( R_GetWindowSize().y / ( ASCIISymbolSize.y * x_boardSize.y ), 1 );
     GameUpdate();
     if ( VAR_Num( x_showAtlas ) ) {
         DrawAtlas();
