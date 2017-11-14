@@ -1,15 +1,43 @@
 #define DBG_PRINT CON_Printf
 #include "zhost.h"
 
+// VNIMANIE! promeni tezi razmeri, ako promenish razmera na poleto!
+const c2_t x_boardSize = { .x = 12, .y = 20 };
+char x_board[] =
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"#          #"
+"############"
+;
+
+static Mix_Chunk *x_soundPop;
+static Mix_Chunk *x_soundThud;
+static Mix_Chunk *x_soundShift;
 static rImage_t *ASCIITexture;
 static v2_t ASCIITextureSize;
 static v2_t ASCIISymbolSize;
 static int PixelSize;
 
-static void DrawASCIITexture( v2_t position ) {
-    R_ColorC( colRed );
-    R_BlendPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
-}
+//static void DrawASCIITexture( v2_t position ) {
+//    R_ColorC( colRed );
+//    R_BlendPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
+//}
 
 static void DrawTile( c2_t position, int symbol ) {
     v2_t st0 = v2xy( ( symbol & 15 ) * ASCIISymbolSize.x, ( symbol / 16 ) * ASCIISymbolSize.y );
@@ -22,8 +50,16 @@ static void DrawTile( c2_t position, int symbol ) {
 
 static void PickFigureAndReset( void );
 
+static const char* GetAssetPath( const char *name ) {
+    return va( "%sdata/%s", SYS_BaseDir(), name );
+}
+
 static void Init( void ) {
-    COM_SRand( SDL_GetTicks() );
+    x_soundPop = Mix_LoadWAV( GetAssetPath( "pop.ogg" ) );
+    Mix_VolumeChunk( x_soundPop, MIX_MAX_VOLUME / 4 );
+    x_soundThud = Mix_LoadWAV( GetAssetPath( "thud.ogg" ) );
+    x_soundShift = Mix_LoadWAV( GetAssetPath( "shift.ogg" ) );
+    Mix_VolumeChunk( x_soundShift, MIX_MAX_VOLUME / 2 );
     ASCIITexture = R_LoadStaticTextureEx( "cp437_12x12.png", &ASCIITextureSize );
     ASCIISymbolSize = v2Scale( ASCIITextureSize, 1 / 16. );
     PickFigureAndReset();
@@ -71,31 +107,6 @@ Tue Sep 12 16:16:19 EEST 2017
 * Proverka za zastapvane s igralnoto pole.
 
 */
-
-// VNIMANIE! promeni tezi razmeri, ako promenish razmera na poleto!
-const c2_t x_boardSize = { .x = 12, .y = 20 };
-char x_board[] =
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"############"
-;
 
 typedef struct {
     c2_t size;
@@ -336,14 +347,16 @@ static bool_t TryMoveDown( int deltaTime ) {
     return TryMove( nextPos );
 }
 
-static void Stop( void ) {
+static void Drop( void ) {
     const char *bmp;
     c2_t bmpSz;
     GetCurrentBitmap( &bmp, &bmpSz );
     CopyBitmap( bmp, bmpSz, x_board, x_boardSize, FixedToInt( x_currentPos ) );
+    Mix_PlayChannel( -1, x_soundThud, 0 );
 }
 
 static void EraseFilledLines( void ) {
+    bool_t result = false;
     for ( int y = x_boardSize.y - 2; y >= 1; ) {
         int numFull = 0;
         for ( int x = 0; x < x_boardSize.x; x++ ) {
@@ -353,6 +366,7 @@ static void EraseFilledLines( void ) {
             }
         }
         if ( numFull == x_boardSize.x ) {
+            result = true;
             x_numErasedLines++;
             CON_Printf( "                                      Pop a line. TOTAL LINES: %d\n", x_numErasedLines );
             for ( int i = y; i >= 1; i-- ) {
@@ -364,13 +378,16 @@ static void EraseFilledLines( void ) {
             y--;
         }
     }
+    if ( result ) {
+        Mix_PlayChannel( -1, x_soundPop, 0 );
+    }
 }
 
 static void GameUpdate( void ) {
     int now = SYS_RealTime();
     int deltaTime = now - x_prevTime;
     if ( ! TryMoveDown( deltaTime ) ) {
-        Stop();
+        Drop();
         EraseFilledLines();
         PickFigureAndReset();
     } else {
@@ -382,17 +399,20 @@ static void GameUpdate( void ) {
     x_prevTime = now;
 }
 
-static void MestiNadiasno_f( void ) {
+static void MoveRight_f( void ) {
+    Mix_PlayChannel( -1, x_soundShift, 0 );
     c2_t nextPos = c2Add( x_currentPos, IntToFixed( c2xy( +1, 0 ) ) );
     TryMove( nextPos );
 }
 
 static void MoveLeft_f( void ) {
+    Mix_PlayChannel( -1, x_soundShift, 0 );
     c2_t nextPos = c2Add( x_currentPos, IntToFixed( c2xy( -1, 0 ) ) );
     TryMove( nextPos );
 }
 
 static void Rotate_f( void ) {
+    Mix_PlayChannel( -1, x_soundShift, 0 );
     figure_t *curFigure = &x_figures[x_currentFigure];
     int bmpIdx = ( x_currentBitmap + 1 ) % curFigure->numBitmaps;
     const char *bmp = curFigure->bitmaps[bmpIdx];
@@ -408,11 +428,11 @@ static void MoveDown_f( void ) {
 
 static void RegistriraiKomandi( void ) {
     CMD_Register( "moveLeft", MoveLeft_f );
-    CMD_Register( "mestiNadiasno", MestiNadiasno_f );
+    CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
     CMD_Register( "rotate", Rotate_f );
     I_Bind( "Left", "+moveLeft" );
-    I_Bind( "Right", "+mestiNadiasno" );
+    I_Bind( "Right", "+moveRight" );
     I_Bind( "Down", "moveDown" );
     I_Bind( "Up", "+rotate" );
 }
@@ -424,7 +444,7 @@ static void AppFrame( void ) {
     GameUpdate();
     DrawBitmap( c2zero, x_board, x_boardSize, colWhite );
     // narisuvai tablicata sas simvoli v desnia agal na ekrana
-    v2_t windowSize = R_GetWindowSize();
+    //v2_t windowSize = R_GetWindowSize();
     //DrawASCIITexture( v2xy( windowSize.x - ASCIITextureSize.x, 0 ) );
     SDL_Delay( 10 );
 }
