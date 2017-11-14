@@ -1,7 +1,6 @@
 #define DBG_PRINT CON_Printf
 #include "zhost.h"
 
-// VNIMANIE! promeni tezi razmeri, ako promenish razmera na poleto!
 const c2_t x_boardSize = { .x = 12, .y = 20 };
 char x_board[] =
 "#          #"
@@ -158,19 +157,27 @@ static v2_t ASCIISymbolSize;
 static int PixelSize;
 static int x_currentFigure;
 static int x_nextFigure;
+static var_t *x_showAtlas;
 
-//static void DrawASCIITexture( v2_t position ) {
-//    R_ColorC( colRed );
-//    R_BlendPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
-//}
+static void DrawAtlas( void ) {
+    v2_t windowSize = R_GetWindowSize();
+    v2_t position = v2xy( windowSize.x - ASCIITextureSize.x, 0 );
+    R_ColorC( colRed );
+    R_BlendPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
+}
 
-static void DrawTile( c2_t position, int symbol ) {
+static void DrawTileKern( c2_t position, int symbol, float partx ) {
     v2_t st0 = v2xy( ( symbol & 15 ) * ASCIISymbolSize.x, ( symbol / 16 ) * ASCIISymbolSize.y );
     v2_t st1 = v2Add( st0, ASCIISymbolSize );
     st0 = v2xy( st0.x / ASCIITextureSize.x, st0.y / ASCIITextureSize.y );
     st1 = v2xy( st1.x / ASCIITextureSize.x, st1.y / ASCIITextureSize.y );
     v2_t scale = v2Scale( ASCIISymbolSize, PixelSize );
-    R_BlendPicV2( v2xy( position.x * scale.x, position.y * scale.y ), scale, st0, st1, ASCIITexture );
+    partx *= scale.x;
+    R_BlendPicV2( v2xy( position.x * partx, position.y * scale.y ), scale, st0, st1, ASCIITexture );
+}
+
+static void DrawTile( c2_t position, int symbol ) {
+    DrawTileKern( position, symbol, 1 );
 }
 
 static bool_t PickFigureAndReset( void );
@@ -200,18 +207,18 @@ static void Init( void ) {
 /*
 
 TODO
-Tochki se davat za vseki iztrit red.
 Bonus tochki se davat za ednovremenno unidhtojeni mnojestvo redove.
-Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
 
 IN PROGRESS
 
-Printirane sas tailove
+Tochki se davat za vseki iztrit red.
+Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
 
 DONE
 
 Tue Nov 14 12:52:33 EET 2017
 
+* Printirane sas tailove
 * Sledvashtata figura koiato shte bade aktivna sled tekushtata e pokazana na ekrana kato chast ot potrebitelskia interfeis.
 
 * Igrata stava po-barza/vdiga se nivoto sled n na broi unishtojeni redove.
@@ -290,17 +297,27 @@ static void CopyBitmap( const char *src, c2_t srcSz,
     }
 }
 
-static void DrawBitmap( c2_t screenPos, const char *bitmap, c2_t razmerNaKarta, color_t cviat ) {
+static void DrawBitmap( c2_t screenPos, const char *bitmap, c2_t razmerNaKarta, color_t color ) {
     static const int remap[256] = {
         ['@'] = 1,
         ['#'] = 1 + 11 * 16,
     };
-    R_ColorC( cviat );
+    R_ColorC( color );
     for ( int i = 0, y = 0; y < razmerNaKarta.y; y++ ) {
         for ( int x = 0; x < razmerNaKarta.x; x++ ) {
             int tile = bitmap[i++];
             DrawTile( c2Add( c2xy( x, y ), screenPos ), remap[tile] );
         }
+    }
+}
+
+static void Print( c2_t pos, const char *string, color_t color ) {
+    R_ColorC( color );
+    float part = 0.65f;
+    pos.x /= part;
+    for ( const char *p = string; *p; p++ ) {
+        DrawTileKern( pos, *p, part );
+        pos.x++;
     }
 }
 
@@ -425,8 +442,9 @@ static void GameUpdate( void ) {
             DrawBitmap( FixedToInt( x_currentPos ), bmp, bmpSz, colGreen );
         }
     }
+    Print( c2xy( x_boardSize.x + 1, 1 ), "Next:", colCyan );
     figure_t *nextFigure = &x_figures[x_nextFigure];
-    DrawBitmap( c2xy( x_boardSize.x + 1, 1 ), nextFigure->bitmaps[0], nextFigure->size, colRed );
+    DrawBitmap( c2xy( x_boardSize.x + 1, 3 ), nextFigure->bitmaps[0], nextFigure->size, colCyan );
     DrawBitmap( c2zero, x_board, x_boardSize, colWhite );
     x_prevTime = now;
 }
@@ -473,7 +491,8 @@ static void Restart_f( void ) {
     }
 }
 
-static void RegistriraiKomandi( void ) {
+static void RegisterVars( void ) {
+    x_showAtlas = VAR_Register( "showAtlas", "0" );
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
@@ -487,17 +506,15 @@ static void RegistriraiKomandi( void ) {
 }
 
 static void AppFrame( void ) {
-    // izchisli goleminata na simvolite/spraitove
-    // simvoli i spraitove v tozi sa vzaimnozameniaemi
     PixelSize = Maxi( R_GetWindowSize().y / 320, 1 );
     GameUpdate();
-    // narisuvai tablicata sas simvoli v desnia agal na ekrana
-    //v2_t windowSize = R_GetWindowSize();
-    //DrawASCIITexture( v2xy( windowSize.x - ASCIITextureSize.x, 0 ) );
+    if ( VAR_Num( x_showAtlas ) ) {
+        DrawAtlas();
+    }
     SDL_Delay( 10 );
 }
 
 int main( int argc, char *argv[] ) {
-    UT_RunApp( "tetris", RegistriraiKomandi, Init, AppFrame, NULL, 0 );
+    UT_RunApp( "tetris", RegisterVars, Init, AppFrame, NULL, 0 );
     return 0;
 }
