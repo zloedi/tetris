@@ -26,93 +26,6 @@ char x_board[] =
 "############"
 ;
 
-static Mix_Chunk *x_soundPop;
-static Mix_Chunk *x_soundThud;
-static Mix_Chunk *x_soundShift;
-static bool_t x_gameOver;
-static rImage_t *ASCIITexture;
-static v2_t ASCIITextureSize;
-static v2_t ASCIISymbolSize;
-static int PixelSize;
-
-//static void DrawASCIITexture( v2_t position ) {
-//    R_ColorC( colRed );
-//    R_BlendPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
-//}
-
-static void DrawTile( c2_t position, int symbol ) {
-    v2_t st0 = v2xy( ( symbol & 15 ) * ASCIISymbolSize.x, ( symbol / 16 ) * ASCIISymbolSize.y );
-    v2_t st1 = v2Add( st0, ASCIISymbolSize );
-    st0 = v2xy( st0.x / ASCIITextureSize.x, st0.y / ASCIITextureSize.y );
-    st1 = v2xy( st1.x / ASCIITextureSize.x, st1.y / ASCIITextureSize.y );
-    v2_t scale = v2Scale( ASCIISymbolSize, PixelSize );
-    R_BlendPicV2( v2xy( position.x * scale.x, position.y * scale.y ), scale, st0, st1, ASCIITexture );
-}
-
-static bool_t PickFigureAndReset( void );
-
-static const char* GetAssetPath( const char *name ) {
-    return va( "%sdata/%s", SYS_BaseDir(), name );
-}
-
-static void Init( void ) {
-    x_soundPop = Mix_LoadWAV( GetAssetPath( "pop.ogg" ) );
-    Mix_VolumeChunk( x_soundPop, MIX_MAX_VOLUME / 4 );
-    x_soundThud = Mix_LoadWAV( GetAssetPath( "thud.ogg" ) );
-    x_soundShift = Mix_LoadWAV( GetAssetPath( "shift.ogg" ) );
-    Mix_VolumeChunk( x_soundShift, MIX_MAX_VOLUME / 2 );
-    ASCIITexture = R_LoadStaticTextureEx( "cp437_12x12.png", &ASCIITextureSize );
-    ASCIISymbolSize = v2Scale( ASCIITextureSize, 1 / 16. );
-    PickFigureAndReset();
-}
-
-//==============================================================================================
-
-/*
-
-TODO
-Tochki se davat za vseki iztrit red.
-Sledvashtata figura koiato shte bade aktivna sled tekushtata e pokazana na ekrana kato chast ot potrebitelskia interfeis.
-Bonus tochki se davat za ednovremenno unidhtojeni mnojestvo redove.
-Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
-
-IN PROGRESS
-
-Igrata stava po-barza/vdiga se nivoto sled n na broi unishtojeni redove.
-
-DONE
-
-Tue Nov 14 12:52:33 EET 2017
-
-* Ako figurata ne moje da bade mestena dokato e chastichno izvan poleto, igrata e zagubena
-*     Restart na igrata s interval
-
-Mon Nov 13 16:10:20 EET 2017
-
-* Kogato figurite padnat na danoto na poleto i ochertaiat linia s ostatacite na drugite figuri, zapalneniat red se unishtojava.
-
-* Igrachat moje da varti aktivnata figura sas strelka nagore.
-*     Izpolzvaiki gorna strelka
-
-* Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
-    * Proverka dali figura e na danoto (ne moje da se manipulira poveche).
-    * Kopirane na starata figura varhu igralnoto pole. 
-    * Sazdavene na nova figura.
-    * Figurite sa s razlichna forma.
-
-Tue Sep 12 16:16:19 EEST 2017
-
-* Igrachat moje da mesti aktivnata figura na ekrana.
-*    Liava strelka - mesti figurata naliavo s edno pole.
-*    Diasna strelka - mesti figurata nadiasno.
-*    Dolna strelka - mesti figurata nadolu
-* Risuvane na igralnoto pole.
-* Risuvane na figura.
-* Animirane na figurata.
-* Proverka za zastapvane s igralnoto pole.
-
-*/
-
 typedef struct {
     c2_t size;
     int numBitmaps;
@@ -235,12 +148,107 @@ static figure_t x_figures[] = {
 };
 
 static const int x_numFigures = sizeof( x_figures ) / sizeof( *x_figures );
-
+static Mix_Chunk *x_soundPop;
+static Mix_Chunk *x_soundThud;
+static Mix_Chunk *x_soundShift;
+static bool_t x_gameOver;
+static rImage_t *ASCIITexture;
+static v2_t ASCIITextureSize;
+static v2_t ASCIISymbolSize;
+static int PixelSize;
 static int x_currentFigure;
+static int x_nextFigure;
+
+//static void DrawASCIITexture( v2_t position ) {
+//    R_ColorC( colRed );
+//    R_BlendPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
+//}
+
+static void DrawTile( c2_t position, int symbol ) {
+    v2_t st0 = v2xy( ( symbol & 15 ) * ASCIISymbolSize.x, ( symbol / 16 ) * ASCIISymbolSize.y );
+    v2_t st1 = v2Add( st0, ASCIISymbolSize );
+    st0 = v2xy( st0.x / ASCIITextureSize.x, st0.y / ASCIITextureSize.y );
+    st1 = v2xy( st1.x / ASCIITextureSize.x, st1.y / ASCIITextureSize.y );
+    v2_t scale = v2Scale( ASCIISymbolSize, PixelSize );
+    R_BlendPicV2( v2xy( position.x * scale.x, position.y * scale.y ), scale, st0, st1, ASCIITexture );
+}
+
+static bool_t PickFigureAndReset( void );
+
+static const char* GetAssetPath( const char *name ) {
+    return va( "%sdata/%s", SYS_BaseDir(), name );
+}
+
+static int GetRandomFigure( void ) {
+    return COM_Rand() % x_numFigures;
+}
+
+static void Init( void ) {
+    x_soundPop = Mix_LoadWAV( GetAssetPath( "pop.ogg" ) );
+    Mix_VolumeChunk( x_soundPop, MIX_MAX_VOLUME / 4 );
+    x_soundThud = Mix_LoadWAV( GetAssetPath( "thud.ogg" ) );
+    x_soundShift = Mix_LoadWAV( GetAssetPath( "shift.ogg" ) );
+    Mix_VolumeChunk( x_soundShift, MIX_MAX_VOLUME / 2 );
+    ASCIITexture = R_LoadStaticTextureEx( "cp437_12x12.png", &ASCIITextureSize );
+    ASCIISymbolSize = v2Scale( ASCIITextureSize, 1 / 16. );
+    x_nextFigure = GetRandomFigure();
+    PickFigureAndReset();
+}
+
+//==============================================================================================
+
+/*
+
+TODO
+Tochki se davat za vseki iztrit red.
+Bonus tochki se davat za ednovremenno unidhtojeni mnojestvo redove.
+Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
+
+IN PROGRESS
+
+Printirane sas tailove
+
+DONE
+
+Tue Nov 14 12:52:33 EET 2017
+
+* Sledvashtata figura koiato shte bade aktivna sled tekushtata e pokazana na ekrana kato chast ot potrebitelskia interfeis.
+
+* Igrata stava po-barza/vdiga se nivoto sled n na broi unishtojeni redove.
+* Ako figurata ne moje da bade mestena dokato e chastichno izvan poleto, igrata e zagubena
+*     Restart na igrata s interval
+
+Mon Nov 13 16:10:20 EET 2017
+
+* Kogato figurite padnat na danoto na poleto i ochertaiat linia s ostatacite na drugite figuri, zapalneniat red se unishtojava.
+
+* Igrachat moje da varti aktivnata figura sas strelka nagore.
+*     Izpolzvaiki gorna strelka
+
+* Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
+    * Proverka dali figura e na danoto (ne moje da se manipulira poveche).
+    * Kopirane na starata figura varhu igralnoto pole. 
+    * Sazdavene na nova figura.
+    * Figurite sa s razlichna forma.
+
+Tue Sep 12 16:16:19 EEST 2017
+
+* Igrachat moje da mesti aktivnata figura na ekrana.
+*    Liava strelka - mesti figurata naliavo s edno pole.
+*    Diasna strelka - mesti figurata nadiasno.
+*    Dolna strelka - mesti figurata nadolu
+* Risuvane na igralnoto pole.
+* Risuvane na figura.
+* Animirane na figurata.
+* Proverka za zastapvane s igralnoto pole.
+
+*/
+
 static int x_currentBitmap;
 static c2_t x_currentPos;
 static int x_prevTime;
-static int x_speed = 64;
+#define INITIAL_SPEED 64
+static int x_speed = INITIAL_SPEED;
 static int x_buttonDown;
 static int x_numErasedLines;
 
@@ -335,7 +343,8 @@ static bool_t IsCurrentBitmapClipping( c2_t fixedPointPos ) {
 
 static bool_t PickFigureAndReset( void ) {
     x_currentBitmap = 0;
-    x_currentFigure = COM_Rand() % x_numFigures;
+    x_currentFigure = x_nextFigure;
+    x_nextFigure = GetRandomFigure();
     figure_t *curFig = &x_figures[x_currentFigure];
     x_currentPos = IntToFixed( c2xy( x_boardSize.x / 2 - 2, -curFig->size.y + 1 ) );
     x_prevTime = SYS_RealTime();
@@ -378,7 +387,7 @@ static void EraseFilledLines( void ) {
         if ( numFull == x_boardSize.x ) {
             result = true;
             x_numErasedLines++;
-            CON_Printf( "                                      Pop a line. TOTAL LINES: %d\n", x_numErasedLines );
+            CON_Printf( "Pop a line. TOTAL LINES: %d\n", x_numErasedLines );
             for ( int i = y; i >= 1; i-- ) {
                 char *dst = &x_board[( i - 0 ) * x_boardSize.x];
                 char *src = &x_board[( i - 1 ) * x_boardSize.x];
@@ -404,6 +413,10 @@ static void GameUpdate( void ) {
             if ( ! PickFigureAndReset() ) {
                 CON_Printf( "GAME OVER!\n" );
                 x_gameOver = true;
+            } else if ( x_numErasedLines >= 10 ) {
+                CON_Printf( "SPEED UP!\n" );
+                x_numErasedLines = 0;
+                x_speed += x_speed / 4;
             }
         } else {
             const char *bmp;
@@ -412,6 +425,9 @@ static void GameUpdate( void ) {
             DrawBitmap( FixedToInt( x_currentPos ), bmp, bmpSz, colGreen );
         }
     }
+    figure_t *nextFigure = &x_figures[x_nextFigure];
+    DrawBitmap( c2xy( x_boardSize.x + 1, 1 ), nextFigure->bitmaps[0], nextFigure->size, colRed );
+    DrawBitmap( c2zero, x_board, x_boardSize, colWhite );
     x_prevTime = now;
 }
 
@@ -451,6 +467,7 @@ static void ClearBoard( void ) {
 static void Restart_f( void ) {
     if ( x_gameOver ) {
         x_gameOver = false;
+        x_speed = INITIAL_SPEED;
         ClearBoard();
         PickFigureAndReset();
     }
@@ -474,7 +491,6 @@ static void AppFrame( void ) {
     // simvoli i spraitove v tozi sa vzaimnozameniaemi
     PixelSize = Maxi( R_GetWindowSize().y / 320, 1 );
     GameUpdate();
-    DrawBitmap( c2zero, x_board, x_boardSize, colWhite );
     // narisuvai tablicata sas simvoli v desnia agal na ekrana
     //v2_t windowSize = R_GetWindowSize();
     //DrawASCIITexture( v2xy( windowSize.x - ASCIITextureSize.x, 0 ) );
