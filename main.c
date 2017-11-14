@@ -50,37 +50,37 @@ static shape_t x_shapes[] = {
     {
         .numBitmaps = 2,
         .bitmaps = {
-            "    "
             "@@  "
             " @@ "
             "    "
-            ,
             "    "
+            ,
             "  @ "
             " @@ "
             " @  "
+            "    "
         },
     },
     {
         .numBitmaps = 2,
         .bitmaps = {
-            "    "
             "  @@"
             " @@ "
             "    "
-            , 
             "    "
+            , 
             " @  "
             " @@ "
             "  @ "
+            "    "
         },
     },
     {
         .numBitmaps = 1,
         .bitmaps = {
+            " @@ "
+            " @@ "
             "    "
-            " @@ "
-            " @@ "
             "    "
         },
     },
