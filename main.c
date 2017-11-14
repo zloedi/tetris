@@ -29,6 +29,7 @@ char x_board[] =
 static Mix_Chunk *x_soundPop;
 static Mix_Chunk *x_soundThud;
 static Mix_Chunk *x_soundShift;
+static bool_t x_gameOver;
 static rImage_t *ASCIITexture;
 static v2_t ASCIITextureSize;
 static v2_t ASCIISymbolSize;
@@ -48,7 +49,7 @@ static void DrawTile( c2_t position, int symbol ) {
     R_BlendPicV2( v2xy( position.x * scale.x, position.y * scale.y ), scale, st0, st1, ASCIITexture );
 }
 
-static void PickFigureAndReset( void );
+static bool_t PickFigureAndReset( void );
 
 static const char* GetAssetPath( const char *name ) {
     return va( "%sdata/%s", SYS_BaseDir(), name );
@@ -70,9 +71,6 @@ static void Init( void ) {
 /*
 
 TODO
-Igrata stava po-barza/vdiga se nivoto sled n na broi unishtojeni redove.
-Ako figurata ne moje da bade mestena dokato e chastichno izvan poleto, igrata e zagubena
-Figurite sa s razlichna forma.
 Tochki se davat za vseki iztrit red.
 Sledvashtata figura koiato shte bade aktivna sled tekushtata e pokazana na ekrana kato chast ot potrebitelskia interfeis.
 Bonus tochki se davat za ednovremenno unidhtojeni mnojestvo redove.
@@ -80,7 +78,14 @@ Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
 
 IN PROGRESS
 
+Igrata stava po-barza/vdiga se nivoto sled n na broi unishtojeni redove.
+
 DONE
+
+Tue Nov 14 12:52:33 EET 2017
+
+* Ako figurata ne moje da bade mestena dokato e chastichno izvan poleto, igrata e zagubena
+*     Restart na igrata s interval
 
 Mon Nov 13 16:10:20 EET 2017
 
@@ -315,26 +320,31 @@ static c2_t FixedToInt( c2_t c ) {
     return c2RShifts( c, 8 );
 }
 
-static void PickFigureAndReset( void ) {
-    x_currentBitmap = 0;
-    x_currentFigure = COM_Rand() % x_numFigures;
-    figure_t *curFig = &x_figures[x_currentFigure];
-    x_currentPos = IntToFixed( c2xy( x_boardSize.x / 2 - 2, -curFig->size.y + 1 ) );
-    x_prevTime = SYS_RealTime();
-    x_buttonDown = 0;
-}
-
 static void GetCurrentBitmap( const char **outBmp, c2_t *outBmpSz ) {
     figure_t *curFigure = &x_figures[x_currentFigure];
     *outBmp = curFigure->bitmaps[x_currentBitmap];
     *outBmpSz = curFigure->size;
 }
 
-static bool_t TryMove( c2_t nextPos ) {
+static bool_t IsCurrentBitmapClipping( c2_t fixedPointPos ) {
     const char *bmp;
     c2_t bmpSz;
     GetCurrentBitmap( &bmp, &bmpSz );
-    if ( IsBitmapClipping( FixedToInt( nextPos ), bmp, bmpSz ) ) {
+    return IsBitmapClipping( FixedToInt( fixedPointPos ), bmp, bmpSz );
+}
+
+static bool_t PickFigureAndReset( void ) {
+    x_currentBitmap = 0;
+    x_currentFigure = COM_Rand() % x_numFigures;
+    figure_t *curFig = &x_figures[x_currentFigure];
+    x_currentPos = IntToFixed( c2xy( x_boardSize.x / 2 - 2, -curFig->size.y + 1 ) );
+    x_prevTime = SYS_RealTime();
+    x_buttonDown = 0;
+    return ! IsCurrentBitmapClipping( x_currentPos );
+}
+
+static bool_t TryMove( c2_t nextPos ) {
+    if ( IsCurrentBitmapClipping( nextPos ) ) {
         return false;
     }
     x_currentPos = nextPos;
@@ -386,15 +396,21 @@ static void EraseFilledLines( void ) {
 static void GameUpdate( void ) {
     int now = SYS_RealTime();
     int deltaTime = now - x_prevTime;
-    if ( ! TryMoveDown( deltaTime ) ) {
-        Drop();
-        EraseFilledLines();
-        PickFigureAndReset();
+    if ( x_gameOver ) {
     } else {
-        const char *bmp;
-        c2_t bmpSz;
-        GetCurrentBitmap( &bmp, &bmpSz );
-        DrawBitmap( FixedToInt( x_currentPos ), bmp, bmpSz, colGreen );
+        if ( ! TryMoveDown( deltaTime ) ) {
+            Drop();
+            EraseFilledLines();
+            if ( ! PickFigureAndReset() ) {
+                CON_Printf( "GAME OVER!\n" );
+                x_gameOver = true;
+            }
+        } else {
+            const char *bmp;
+            c2_t bmpSz;
+            GetCurrentBitmap( &bmp, &bmpSz );
+            DrawBitmap( FixedToInt( x_currentPos ), bmp, bmpSz, colGreen );
+        }
     }
     x_prevTime = now;
 }
@@ -426,15 +442,31 @@ static void MoveDown_f( void ) {
     x_buttonDown = *CMD_Argv( 0 ) == '+' ? 1 : 0;
 }
 
+static void ClearBoard( void ) {
+    for ( int y = 0; y < x_boardSize.y - 1; y++ ) {
+        memset( &x_board[1 + y * x_boardSize.x], ' ', x_boardSize.x - 2 );
+    }
+}
+
+static void Restart_f( void ) {
+    if ( x_gameOver ) {
+        x_gameOver = false;
+        ClearBoard();
+        PickFigureAndReset();
+    }
+}
+
 static void RegistriraiKomandi( void ) {
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
     CMD_Register( "rotate", Rotate_f );
+    CMD_Register( "restartGame", Restart_f );
     I_Bind( "Left", "+moveLeft" );
     I_Bind( "Right", "+moveRight" );
     I_Bind( "Down", "moveDown" );
     I_Bind( "Up", "+rotate" );
+    I_Bind( "Space", "+restartGame" );
 }
 
 static void AppFrame( void ) {
