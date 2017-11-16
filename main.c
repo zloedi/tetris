@@ -1,3 +1,58 @@
+//==============================================================================================
+
+/*
+
+TODO
+Controller support.
+Split screen.
+
+IN PROGRESS
+
+Level number
+Points gained i.e. (+100)
+
+DONE
+
+Tue Nov 14 12:52:33 EET 2017
+
+* Bonus tochki se davat za ednovremenno unidhtojeni mnojestvo redove.
+* Tochki se davat za vseki iztrit red.
+* Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
+* Hiscore
+
+* Printirane sas tailove
+* Sledvashtata figura koiato shte bade aktivna sled tekushtata e pokazana na ekrana kato chast ot potrebitelskia interfeis.
+
+* Igrata stava po-barza/vdiga se nivoto sled n na broi unishtojeni redove.
+* Ako figurata ne moje da bade mestena dokato e chastichno izvan poleto, igrata e zagubena
+*     Restart na igrata s interval
+
+Mon Nov 13 16:10:20 EET 2017
+
+* Kogato figurite padnat na danoto na poleto i ochertaiat linia s ostatacite na drugite figuri, zapalneniat red se unishtojava.
+
+* Igrachat moje da varti aktivnata figura sas strelka nagore.
+*     Izpolzvaiki gorna strelka
+
+* Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
+    * Proverka dali figura e na danoto (ne moje da se manipulira poveche).
+    * Kopirane na starata figura varhu igralnoto pole. 
+    * Sazdavene na nova figura.
+    * Figurite sa s razlichna forma.
+
+Tue Sep 12 16:16:19 EEST 2017
+
+* Igrachat moje da mesti aktivnata figura na ekrana.
+*    Liava strelka - mesti figurata naliavo s edno pole.
+*    Diasna strelka - mesti figurata nadiasno.
+*    Dolna strelka - mesti figurata nadolu
+* Risuvane na igralnoto pole.
+* Risuvane na figura.
+* Animirane na figurata.
+* Proverka za zastapvane s igralnoto pole.
+
+*/
+
 #define DBG_PRINT CON_Printf
 #include "zhost.h"
 
@@ -159,6 +214,7 @@ static shape_t x_shapes[] = {
 };
 
 static const int x_numShapes = sizeof( x_shapes ) / sizeof( *x_shapes );
+static Mix_Music *x_music;
 static Mix_Chunk *x_soundPop;
 static Mix_Chunk *x_soundThud;
 static Mix_Chunk *x_soundShift;
@@ -209,6 +265,8 @@ static int GetRandomShape( void ) {
 }
 
 static void Init( void ) {
+    x_music = Mix_LoadMUS( GetAssetPath( "ievan_polkka_8bit.ogg" ) );
+    Mix_VolumeMusic( MIX_MAX_VOLUME / 4 );
     x_soundPop = Mix_LoadWAV( GetAssetPath( "pop.ogg" ) );
     Mix_VolumeChunk( x_soundPop, MIX_MAX_VOLUME / 4 );
     x_soundThud = Mix_LoadWAV( GetAssetPath( "thud.ogg" ) );
@@ -218,57 +276,8 @@ static void Init( void ) {
     ASCIISymbolSize = v2Scale( ASCIITextureSize, 1 / 16. );
     x_nextShape = GetRandomShape();
     PickShapeAndReset();
+    Mix_PlayMusic( x_music, -1 );
 }
-
-//==============================================================================================
-
-/*
-
-TODO
-Bonus tochki se davat za ednovremenno unidhtojeni mnojestvo redove.
-Hiscore
-
-IN PROGRESS
-
-Tochki se davat za vseki iztrit red.
-Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
-
-DONE
-
-Tue Nov 14 12:52:33 EET 2017
-
-* Printirane sas tailove
-* Sledvashtata figura koiato shte bade aktivna sled tekushtata e pokazana na ekrana kato chast ot potrebitelskia interfeis.
-
-* Igrata stava po-barza/vdiga se nivoto sled n na broi unishtojeni redove.
-* Ako figurata ne moje da bade mestena dokato e chastichno izvan poleto, igrata e zagubena
-*     Restart na igrata s interval
-
-Mon Nov 13 16:10:20 EET 2017
-
-* Kogato figurite padnat na danoto na poleto i ochertaiat linia s ostatacite na drugite figuri, zapalneniat red se unishtojava.
-
-* Igrachat moje da varti aktivnata figura sas strelka nagore.
-*     Izpolzvaiki gorna strelka
-
-* Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
-    * Proverka dali figura e na danoto (ne moje da se manipulira poveche).
-    * Kopirane na starata figura varhu igralnoto pole. 
-    * Sazdavene na nova figura.
-    * Figurite sa s razlichna forma.
-
-Tue Sep 12 16:16:19 EEST 2017
-
-* Igrachat moje da mesti aktivnata figura na ekrana.
-*    Liava strelka - mesti figurata naliavo s edno pole.
-*    Diasna strelka - mesti figurata nadiasno.
-*    Dolna strelka - mesti figurata nadolu
-* Risuvane na igralnoto pole.
-* Risuvane na figura.
-* Animirane na figurata.
-* Proverka za zastapvane s igralnoto pole.
-
-*/
 
 static int x_currentBitmap;
 static c2_t x_currentPos;
@@ -453,6 +462,7 @@ static void GameUpdate( void ) {
         if ( ! TryMoveDown( deltaTime ) ) {
             if ( ! Drop() ) {
                 x_gameOver = true;
+                Mix_HaltMusic();
             } else {
                 EraseFilledLines();
                 PickShapeAndReset();
@@ -522,6 +532,7 @@ static void ClearBoard( void ) {
 static void Restart_f( void ) {
     if ( x_gameOver ) {
         x_gameOver = false;
+        Mix_PlayMusic( x_music, -1 );
         x_speed = INITIAL_SPEED;
         x_numErasedLines = 0;
         x_nextShape = GetRandomShape();
