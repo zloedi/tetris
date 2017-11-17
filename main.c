@@ -3,11 +3,11 @@
 /*
 
 TODO
-Controller support.
 Split screen.
 
 IN PROGRESS
 
+Controller support.
 Level number
 Points gained i.e. (+100)
 
@@ -285,26 +285,30 @@ static int GetRandomShape( void ) {
     return COM_Rand() % x_numShapes;
 }
 
-static c2_t IntToFixed( c2_t c ) {
+static c2_t c2IntToFixed( c2_t c ) {
     return c2LShifts( c, 8 );
 }
 
-static c2_t FixedToInt( c2_t c ) {
+static c2_t c2FixedToInt( c2_t c ) {
     return c2RShifts( c, 8 );
 }
 
+static void LatchButton( butState_t *button ) {
+    *button = *button == BS_PRESSED ? BS_LATCHED : BS_RELEASED;
+}
+
 static void LatchButtons( playerSeat_t *pls ) {
-    pls->butMoveDown = pls->butMoveDown == BS_PRESSED ? BS_LATCHED : BS_RELEASED;
-    pls->butMoveLeft = pls->butMoveLeft == BS_PRESSED ? BS_LATCHED : BS_RELEASED;
-    pls->butMoveRight = pls->butMoveRight == BS_PRESSED ? BS_LATCHED : BS_RELEASED;
-    pls->butRotate = pls->butRotate == BS_PRESSED ? BS_LATCHED : BS_RELEASED;
+    LatchButton( &pls->butMoveDown );
+    LatchButton( &pls->butMoveLeft );
+    LatchButton( &pls->butMoveRight );
+    LatchButton( &pls->butRotate );
 }
 
 static void PickShapeAndReset( playerSeat_t *pls ) {
     pls->currentBitmap = 0;
     pls->currentShape = x_pls.nextShape;
     pls->nextShape = GetRandomShape();
-    pls->currentPos = IntToFixed( c2xy( x_boardSize.x / 2 - 2, -x_shapeSize.y + 1 ) );
+    pls->currentPos = c2IntToFixed( c2xy( x_boardSize.x / 2 - 2, -x_shapeSize.y + 1 ) );
 }
 
 static const char* GetAssetPath( const char *name ) {
@@ -427,7 +431,7 @@ static const char* GetCurrentBitmap( void ) {
 }
 
 static bool_t IsCurrentBitmapClipping( const char *board, c2_t fixedPointPos ) {
-    return IsBitmapClipping( board, FixedToInt( fixedPointPos ), GetCurrentBitmap() );
+    return IsBitmapClipping( board, c2FixedToInt( fixedPointPos ), GetCurrentBitmap() );
 }
 
 static bool_t TryMove( const char *board, c2_t nextPos ) {
@@ -446,7 +450,7 @@ static bool_t TryMoveDown( const char *board, int deltaTime ) {
 }
 
 static bool_t Drop( playerSeat_t *pls ) {
-    CopyBitmap( GetCurrentBitmap(), x_shapeSize, pls->board, x_boardSize, FixedToInt( pls->currentPos ) );
+    CopyBitmap( GetCurrentBitmap(), x_shapeSize, pls->board, x_boardSize, c2FixedToInt( pls->currentPos ) );
     Mix_PlayChannel( -1, x_soundThud, 0 );
     pls->score += pls->speed / 2;
     return pls->currentPos.y + x_shapeSize.y >= 0;
@@ -523,7 +527,7 @@ static void GameUpdate( void ) {
                 }
             }
         } else {
-            DrawBitmap( FixedToInt( x_pls.currentPos ), GetCurrentBitmap(), x_shapeSize, colGreen );
+            DrawBitmap( c2FixedToInt( x_pls.currentPos ), GetCurrentBitmap(), x_shapeSize, colGreen );
         }
         DrawBitmap( c2zero, x_pls.board, x_boardSize, colWhite );
     }
@@ -551,26 +555,42 @@ static bool_t DoButton( bool_t down, butState_t *button ) {
     return result;
 }
 
+static bool_t DoLatchButton( bool_t down, butState_t *button ) {
+    if ( DoButton( down, button ) ) {
+        LatchButton( button );
+        return true;
+    }
+    return false;
+}
+
+static void TryMoveRight( playerSeat_t *pls, int offset ) {
+    c2_t nextPos = c2xy( ( pls->currentPos.x & ~255 ) + offset, pls->currentPos.y );
+    TryMove( pls->board, nextPos );
+}
+
+static void TryMoveLeft( playerSeat_t *pls, int offset ) {
+    c2_t nextPos = c2xy( ( pls->currentPos.x & ~255 ) - offset, pls->currentPos.y );
+    TryMove( pls->board, nextPos );
+}
+
 static void DoRightButton( playerSeat_t *pls, bool_t down ) {
     if ( DoButton( down, &pls->butMoveRight ) ) {
-        c2_t nextPos = c2xy( ( pls->currentPos.x & ~255 ) + 256, pls->currentPos.y );
-        TryMove( pls->board, nextPos );
+        TryMoveRight( pls, 256 );
     }
 }
 
 static void DoLeftButton( playerSeat_t *pls, bool_t down ) {
-    if ( DoButton( down, &x_pls.butMoveLeft ) ) {
-        c2_t nextPos = c2xy( ( x_pls.currentPos.x & ~255 ), x_pls.currentPos.y );
-        TryMove( x_pls.board, nextPos );
+    if ( DoButton( down, &pls->butMoveLeft ) ) {
+        TryMoveLeft( pls, 0 );
     }
 }
 
 static void MoveRight_f( void ) {
-    DoRightButton( &x_pls, *CMD_Argv( 0 ) == '+' );
+    TryMoveRight( &x_pls, 256 );
 }
 
 static void MoveLeft_f( void ) {
-    DoLeftButton( &x_pls, *CMD_Argv( 0 ) == '+' );
+    TryMoveLeft( &x_pls, 256 );
 }
 
 static void HorzAxis_f( void ) {
@@ -588,13 +608,17 @@ static void HorzAxis_f( void ) {
     }
 }
 
-static void Rotate_f( void ) {
-    Mix_PlayChannel( -1, x_soundShift, 0 );
+static void Rotate( void ) {
     shape_t *curShape = &x_shapes[x_pls.currentShape];
     int bmpIdx = ( x_pls.currentBitmap + 1 ) % curShape->numBitmaps;
-    if ( ! IsBitmapClipping( x_pls.board, FixedToInt( x_pls.currentPos ), curShape->bitmaps[bmpIdx] ) ) {
+    if ( ! IsBitmapClipping( x_pls.board, c2FixedToInt( x_pls.currentPos ), curShape->bitmaps[bmpIdx] ) ) {
         x_pls.currentBitmap = bmpIdx;
     }
+}
+
+static void Rotate_f( void ) {
+    Mix_PlayChannel( -1, x_soundShift, 0 );
+    Rotate();
 }
 
 static void MoveDown_f( void ) {
@@ -609,6 +633,15 @@ static void Restart_f( void ) {
     }
 }
 
+static void VertAxis_f( void ) {
+    int axis = atoi( CMD_Argv( 1 ) );
+    bool_t liveZone = abs( axis ) > 8000;
+    DoButton( liveZone && axis > 0, &x_pls.butMoveDown );
+    if ( DoLatchButton( liveZone && axis < 0, &x_pls.butRotate ) ) {
+        Rotate();
+    }
+}
+
 static void RegisterVars( void ) {
     x_showAtlas = VAR_Register( "showAtlas", "0" );
     x_hiscore = VAR_Register( "hiscore", "0" );
@@ -616,15 +649,17 @@ static void RegisterVars( void ) {
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
+    CMD_Register( "vertAxis", VertAxis_f );
     CMD_Register( "rotate", Rotate_f );
     CMD_Register( "restartGame", Restart_f );
     CMD_Register( "horizontalMove", HorzAxis_f );
-    I_Bind( "Left", "moveLeft" );
-    I_Bind( "Right", "moveRight" );
+    I_Bind( "Left", "+moveLeft" );
+    I_Bind( "Right", "+moveRight" );
     I_Bind( "Down", "moveDown" );
     I_Bind( "Up", "+rotate" );
     I_Bind( "Space", "+restartGame" );
     I_Bind( "joystick 0 axis 0", "horizontalMove" );
+    I_Bind( "joystick 0 axis 1", "vertAxis" );
 }
 
 static void AppFrame( void ) {
