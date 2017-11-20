@@ -555,57 +555,48 @@ static bool_t DoButton( bool_t down, butState_t *button ) {
     return result;
 }
 
-static bool_t DoLatchButton( bool_t down, butState_t *button ) {
-    if ( DoButton( down, button ) ) {
-        LatchButton( button );
-        return true;
-    }
-    return false;
-}
+//static bool_t DoLatchButton( bool_t down, butState_t *button ) {
+//    if ( DoButton( down, button ) ) {
+//        LatchButton( button );
+//        return true;
+//    }
+//    return false;
+//}
 
-static void TryMoveRight( playerSeat_t *pls, int offset ) {
-    c2_t nextPos = c2xy( ( pls->currentPos.x & ~255 ) + offset, pls->currentPos.y );
+static void TryMoveRight( playerSeat_t *pls ) {
+    c2_t nextPos = c2xy( ( pls->currentPos.x & ~255 ) + 256, pls->currentPos.y );
     TryMove( pls->board, nextPos );
 }
 
-static void TryMoveLeft( playerSeat_t *pls, int offset ) {
-    c2_t nextPos = c2xy( ( pls->currentPos.x & ~255 ) - offset, pls->currentPos.y );
+static void TryMoveLeft( playerSeat_t *pls ) {
+    c2_t nextPos = c2xy( ( pls->currentPos.x & ~255 ), pls->currentPos.y );
     TryMove( pls->board, nextPos );
 }
 
 static void DoRightButton( playerSeat_t *pls, bool_t down ) {
     if ( DoButton( down, &pls->butMoveRight ) ) {
-        TryMoveRight( pls, 256 );
+        TryMoveRight( pls );
     }
 }
 
 static void DoLeftButton( playerSeat_t *pls, bool_t down ) {
     if ( DoButton( down, &pls->butMoveLeft ) ) {
-        TryMoveLeft( pls, 0 );
+        TryMoveLeft( pls );
     }
 }
 
 static void MoveRight_f( void ) {
-    TryMoveRight( &x_pls, 256 );
+    DoRightButton( &x_pls, CMD_Engaged() );
 }
 
 static void MoveLeft_f( void ) {
-    TryMoveLeft( &x_pls, 256 );
+    DoLeftButton( &x_pls, CMD_Engaged() );
 }
 
 static void HorzAxis_f( void ) {
-    int axis = atoi( CMD_Argv( 1 ) );
-    bool_t liveZone = abs( axis ) > 8000;
-    if ( liveZone ) {
-        if ( axis > 0 ) {
-            DoRightButton( &x_pls, true );
-        } else {
-            DoLeftButton( &x_pls, true );
-        }
-    } else {
-        DoRightButton( &x_pls, false );
-        DoLeftButton( &x_pls, false );
-    }
+    int as = CMD_ArgvAxisSign();
+    DoRightButton( &x_pls, as > 0 );
+    DoLeftButton( &x_pls, as < 0 );
 }
 
 static void Rotate( void ) {
@@ -617,28 +608,19 @@ static void Rotate( void ) {
 }
 
 static void Rotate_f( void ) {
-    Mix_PlayChannel( -1, x_soundShift, 0 );
-    Rotate();
+    if ( DoButton( CMD_Engaged(), &x_pls.butRotate ) ) {
+        Rotate();
+    }
 }
 
 static void MoveDown_f( void ) {
-    bool_t down = *CMD_Argv( 0 ) == '+';
-    DoButton( down, &x_pls.butMoveDown );
+    DoButton( CMD_Engaged(), &x_pls.butMoveDown );
 }
 
 static void Restart_f( void ) {
     if ( x_pls.gameOver ) {
         Mix_PlayMusic( x_music, -1 );
         StartNewGame( &x_pls );
-    }
-}
-
-static void VertAxis_f( void ) {
-    int axis = atoi( CMD_Argv( 1 ) );
-    bool_t liveZone = abs( axis ) > 8000;
-    DoButton( liveZone && axis > 0, &x_pls.butMoveDown );
-    if ( DoLatchButton( liveZone && axis < 0, &x_pls.butRotate ) ) {
-        Rotate();
     }
 }
 
@@ -649,17 +631,17 @@ static void RegisterVars( void ) {
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
-    CMD_Register( "vertAxis", VertAxis_f );
     CMD_Register( "rotate", Rotate_f );
     CMD_Register( "restartGame", Restart_f );
     CMD_Register( "horizontalMove", HorzAxis_f );
-    I_Bind( "Left", "+moveLeft" );
-    I_Bind( "Right", "+moveRight" );
+    I_Bind( "Left", "moveLeft" );
+    I_Bind( "Right", "moveRight" );
     I_Bind( "Down", "moveDown" );
-    I_Bind( "Up", "+rotate" );
-    I_Bind( "Space", "+restartGame" );
+    I_Bind( "Up", "rotate" );
+    I_Bind( "Space", "!restartGame" );
     I_Bind( "joystick 0 axis 0", "horizontalMove" );
-    I_Bind( "joystick 0 axis 1", "vertAxis" );
+    I_Bind( "joystick 0 axis 1", "-rotate ; +moveDown" );
+    //I_Bind( "joystick 0 axis 1", "+moveDown" );
 }
 
 static void AppFrame( void ) {
