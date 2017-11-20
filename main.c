@@ -7,15 +7,20 @@ Split screen.
 
 IN PROGRESS
 
-Controller support.
 Level number
 Points gained i.e. (+100)
+Controller support.
+    * rotate with any up axis
+    * rotate with any button
+    * move down with any down axis
+    * move horizontal any horizontal axis
+    * move using the hat
 
 DONE
 
 Tue Nov 14 12:52:33 EET 2017
 
-* Bonus tochki se davat za ednovremenno unidhtojeni mnojestvo redove.
+* Bonus tochki se davat za ednovremenno unishtojeni mnojestvo redove.
 * Tochki se davat za vseki iztrit red.
 * Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
 * Hiscore
@@ -639,9 +644,14 @@ static void RegisterVars( void ) {
     I_Bind( "Down", "moveDown" );
     I_Bind( "Up", "rotate" );
     I_Bind( "Space", "!restartGame" );
-    I_Bind( "joystick 0 axis 0", "horizontalMove" );
-    I_Bind( "joystick 0 axis 1", "-rotate ; +moveDown" );
-    //I_Bind( "joystick 0 axis 1", "+moveDown" );
+    for ( int joy = 0; joy < I_MAX_JOYSTICKS; joy++ ) {
+        I_Bind( va( "joystick %d axis 0", joy ), "horizontalMove" );
+        I_Bind( va( "joystick %d axis 1", joy ), "-rotate ; +moveDown" );
+        for ( int button = 0; button < I_MAX_BUTTONS; button++ ) {
+            const char *str = va( "joystick %d button %d", joy, button );
+            I_Bind( str, "rotate" );
+        }
+    }
 }
 
 static void AppFrame( void ) {
