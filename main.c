@@ -18,9 +18,10 @@ IN PROGRESS
 
 Split screen.
     * encode controller id in the command
-    draw the board with an offset
-    remove all x_pls
-    get player by command device
+    * draw the board with an offset
+    * remove all x_pls
+    * get player by command device
+    don't kill off a seat before both seats are done.
 
 DONE
 
@@ -67,11 +68,10 @@ Tue Sep 12 16:16:19 EEST 2017
 #define DBG_PRINT CON_Printf
 #include "zhost.h"
 
-#define BOARD_SIZE_X 12
-#define BOARD_SIZE_Y 20
-#define SEAT_SIZE (BOARD_SIZE_X+6)
-const c2_t x_boardSize = { .x = BOARD_SIZE_X, .y = BOARD_SIZE_Y };
+const c2_t x_boardSize = { .x = 12, .y = 21 };
+#define SEAT_SIZE (x_boardSize.x+6)
 char x_board[] =
+"#          #"
 "#          #"
 "#          #"
 "#          #"
@@ -250,8 +250,9 @@ typedef enum {
 } butState_t;
 
 typedef struct {
-    char device[3];
-    bool_t gameOver;
+    int deviceType;
+    int deviceId;
+    bool_t activated;
     int nextShape;
     int currentShape;
     int currentBitmap;
@@ -263,18 +264,10 @@ typedef struct {
     butState_t butRotate;
     int numErasedLines;
     int score;
-    char board[BOARD_SIZE_X * BOARD_SIZE_Y];
+    char board[sizeof( x_board )];
 } playerSeat_t;
 
-typedef struct {
-    c2_t boardOffset;
-} playerSeatConf_t;
-
-static playerSeat_t x_pls;
-
-//static playerSeatConf_t x_plsConf = {
-//    .boardOffset = { .x = 10, .y = 0 },
-//};
+static playerSeat_t x_pls[2];
 
 static void DrawAtlas( void ) {
     v2_t windowSize = R_GetWindowSize();
@@ -336,13 +329,18 @@ static const char* GetAssetPath( const char *name ) {
     return va( "%sdata/%s", SYS_BaseDir(), name );
 }
 
-static void StartNewGame( playerSeat_t *pls ) {
+static void StartNewGame( int deviceType, int deviceId, playerSeat_t *pls ) {
     memset( pls, 0, sizeof( *pls ) );
+    pls->activated = true;
+    pls->deviceType = deviceType;
+    pls->deviceId = deviceId;
     pls->speed = INITIAL_SPEED;
     pls->nextShape = GetRandomShape();
-    memcpy( pls->board, x_board, sizeof( x_board ) );
+    memcpy( pls->board, x_board, sizeof( pls->board ) );
     PickShapeAndReset( pls );
-    Mix_PlayMusic( x_music, -1 );
+    if ( ! Mix_PlayingMusic() ) {
+        Mix_PlayMusic( x_music, -1 );
+    }
 }
 
 static void UpdateMusicVolume( void ) {
@@ -350,16 +348,69 @@ static void UpdateMusicVolume( void ) {
     Mix_VolumeMusic( vol * MIX_MAX_VOLUME / 4 );
 }
 
-//static playerSeat_t* ArgvSeat( void ) {
-//    return NULL;
-//}
+static playerSeat_t* ArgvSeat( void ) {
+    int type = CMD_ArgvDeviceType();
+    int id = CMD_ArgvDeviceId();
+    for ( int i = 0; i < 2; i++ ) {
+        playerSeat_t *pls = &x_pls[i];
+        if ( pls->deviceType == type && pls->deviceId == id ) {
+            return pls;
+        }
+    }
+    return x_pls;
+}
 
-static bool_t OnAnyButton_f( int code, bool_t down ) {
-    if ( down && x_pls.gameOver ) {
-        StartNewGame( &x_pls );
-        return true;
+static bool_t IsAnySeatActive( void ) {
+    for ( int i = 0; i < 2; i++ ) {
+        if ( x_pls[i].activated ) {
+            return true;
+        }
     }
     return false;
+}
+
+static playerSeat_t* GetFreeSeat( void ) {
+    for ( int i = 0; i < 2; i++ ) {
+        playerSeat_t *pls = &x_pls[i];
+        if ( ! pls->activated ) {
+            return pls;
+        }
+    }
+    return NULL;
+}
+
+static bool_t IsControllerTaken( int type, int id ) {
+    for ( int i = 0; i < 2; i++ ) {
+        playerSeat_t *pls = &x_pls[i];
+        if ( pls->deviceType == type && pls->deviceId == id ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool_t OnAnyButton_f( int code, bool_t down ) {
+    if ( down ) {
+        playerSeat_t *pls = GetFreeSeat();
+        if ( pls ) {
+            int type = I_IsJoystickCode( code ) ? 'j' : 'k';
+            int id = '0' + I_DeviceOfCode( code );
+            if ( ! IsControllerTaken( type, id ) ) {
+                StartNewGame( type, id, pls );
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static void GameOver( playerSeat_t *pls ) {
+    pls->activated = false;
+    pls->deviceType = 0;
+    pls->deviceId = 0;
+    if ( ! IsAnySeatActive() ) {
+        Mix_HaltMusic();
+    }
 }
 
 static void Init( void ) {
@@ -377,7 +428,9 @@ static void Init( void ) {
     TileSize = v2Scale( ASCIITextureSize, 1 / 16. );
 
     x_prevTime = SYS_RealTime();
-    StartNewGame( &x_pls );
+    for ( int i = 0; i < 2; i++ ) {
+        GameOver( &x_pls[i] );
+    }
 }
 
 static int ReadTile( c2_t pos, const char *bmp, c2_t bmpSz ) {
@@ -468,20 +521,20 @@ static bool_t IsBitmapClipping( const char *board, c2_t posOnBoard, const char *
     return false;
 }
 
-static const char* GetCurrentBitmap( void ) {
-    shape_t *curShape = &x_shapes[x_pls.currentShape];
-    return curShape->bitmaps[x_pls.currentBitmap];
+static const char* GetCurrentBitmap( playerSeat_t *pls ) {
+    shape_t *curShape = &x_shapes[pls->currentShape];
+    return curShape->bitmaps[pls->currentBitmap];
 }
 
-static bool_t IsCurrentBitmapClipping( const char *board, c2_t fixedPointPos ) {
-    return IsBitmapClipping( board, c2FixedToInt( fixedPointPos ), GetCurrentBitmap() );
+static bool_t IsCurrentBitmapClipping( playerSeat_t *pls, c2_t fixedPointPos ) {
+    return IsBitmapClipping( pls->board, c2FixedToInt( fixedPointPos ), GetCurrentBitmap( pls ) );
 }
 
-static bool_t TryMove( const char *board, c2_t nextPos ) {
-    if ( IsCurrentBitmapClipping( board, nextPos ) ) {
+static bool_t TryMove( playerSeat_t *pls, c2_t nextPos ) {
+    if ( IsCurrentBitmapClipping( pls, nextPos ) ) {
         return false;
     }
-    x_pls.currentPos = nextPos;
+    pls->currentPos = nextPos;
     return true;
 }
 
@@ -492,11 +545,11 @@ static int GetHoldSpeed( bool_t butDown, int baseSpeed, int deltaTime ) {
 static bool_t TryMoveDown( playerSeat_t *pls, int deltaTime ) {
     int speed = GetHoldSpeed( pls->butMoveDown == BS_PRESSED, pls->speed, deltaTime );
     c2_t nextPos = c2xy( pls->currentPos.x, pls->currentPos.y + speed );
-    return TryMove( pls->board, nextPos );
+    return TryMove( pls, nextPos );
 }
 
 static bool_t Drop( playerSeat_t *pls ) {
-    CopyBitmap( GetCurrentBitmap(), x_shapeSize, pls->board, x_boardSize, c2FixedToInt( pls->currentPos ) );
+    CopyBitmap( GetCurrentBitmap( pls ), x_shapeSize, pls->board, x_boardSize, c2FixedToInt( pls->currentPos ) );
     Mix_PlayChannel( -1, x_soundThud, 0 );
     pls->score += pls->speed / 2;
     return pls->currentPos.y + x_shapeSize.y >= 0;
@@ -534,44 +587,40 @@ static void EraseFilledLines( playerSeat_t *pls ) {
 }
 
 static void TryMoveHorz( playerSeat_t *pls, int deltaTime ) {
-    int dir = ( x_pls.butMoveRight == BS_PRESSED ) 
-            - ( x_pls.butMoveLeft == BS_PRESSED );
+    int dir = ( pls->butMoveRight == BS_PRESSED ) 
+            - ( pls->butMoveLeft == BS_PRESSED );
     if ( dir != 0 ) {
         int speed = GetHoldSpeed( true, INITIAL_SPEED, deltaTime ) / 2;
         int off = dir > 0 ? speed : -speed;
         c2_t nextPos = c2xy( pls->currentPos.x + off, pls->currentPos.y );
-        TryMove( pls->board, nextPos );
+        TryMove( pls, nextPos );
     }
 }
 
-//static c2_t BoardPos( c2_t c ) {
-//    return c2Add( x_plsConf.boardOffset, c );
-//}
+static void UpdateHiscore( playerSeat_t *pls ) {
+    if ( VAR_Num( x_hiscore ) < pls->score ) {
+        VAR_Set( x_hiscore, va( "%d", pls->score ), false );
+    }
+}
 
-static void GameUpdate( c2_t boffset, playerSeat_t *pls ) {
-    int now = SYS_RealTime();
-    int deltaTime = now - x_prevTime;
-    if ( pls->gameOver ) {
-        if ( VAR_Num( x_hiscore ) < pls->score ) {
-            VAR_Set( x_hiscore, va( "%d", pls->score ), false );
-        }
+static void GameUpdate( c2_t boffset, playerSeat_t *pls, int deltaTime ) {
+    if ( ! pls->activated ) {
         DrawBitmapOff( boffset, c2zero, pls->board, x_boardSize, colWhite );
-        PrintOff( boffset, c2xy( x_boardSize.x / 2 - 3, x_boardSize.y / 2 - 1 ), 
-                "GAME OVER", colRed );
-        if ( now & 256 ) { 
-            PrintOff( boffset, c2xy( x_boardSize.x / 2 - 4, x_boardSize.y / 2 ), 
-                    "Press Any Button", colRed );
+        //PrintOff( boffset, c2xy( x_boardSize.x / 2 - 3, x_boardSize.y / 2 - 1 ), 
+        //        "GAME OVER", colRed );
+        if ( SYS_RealTime() & 256 ) { 
+            PrintOff( boffset, c2xy( x_boardSize.x / 2 - 5, x_boardSize.y / 2 ), 
+                    "Press Any Button", colMagenta );
         }
     } else {
-        TryMoveHorz( &x_pls, deltaTime );
-        if ( ! TryMoveDown( &x_pls, deltaTime ) ) {
-            if ( ! Drop( &x_pls ) ) {
-                pls->gameOver = true;
-                Mix_HaltMusic();
+        TryMoveHorz( pls, deltaTime );
+        if ( ! TryMoveDown( pls, deltaTime ) ) {
+            if ( ! Drop( pls ) ) {
+                GameOver( pls );
             } else {
-                EraseFilledLines( &x_pls );
-                PickShapeAndReset( &x_pls );
-                LatchButtons( &x_pls );
+                EraseFilledLines( pls );
+                PickShapeAndReset( pls );
+                LatchButtons( pls );
                 if ( pls->numErasedLines >= 10 ) {
                     CON_Printf( "SPEED UP!\n" );
                     pls->numErasedLines = 0;
@@ -579,7 +628,7 @@ static void GameUpdate( c2_t boffset, playerSeat_t *pls ) {
                 }
             }
         } else {
-            DrawBitmapOff( boffset, c2FixedToInt( pls->currentPos ), GetCurrentBitmap(), x_shapeSize, colGreen );
+            DrawBitmapOff( boffset, c2FixedToInt( pls->currentPos ), GetCurrentBitmap( pls ), x_shapeSize, colGreen );
         }
         DrawBitmap( boffset, pls->board, x_boardSize, colWhite );
     }
@@ -591,7 +640,7 @@ static void GameUpdate( c2_t boffset, playerSeat_t *pls ) {
     PrintOff( boffset, c2xy( x_boardSize.x + 1, 8 ), va( "%d", pls->score ), colWhite );
     PrintOff( boffset, c2xy( x_boardSize.x + 1, 10 ), "HISCORE", colCyan );
     PrintOff( boffset, c2xy( x_boardSize.x + 1, 11 ), va( "%d", ( int )VAR_Num( x_hiscore ) ), colWhite );
-    x_prevTime = now;
+    UpdateHiscore( pls );
 }
 
 static bool_t DoButton( bool_t down, butState_t *button ) {
@@ -618,12 +667,12 @@ static bool_t DoButton( bool_t down, butState_t *button ) {
 
 static void TryMoveRight( playerSeat_t *pls ) {
     c2_t nextPos = c2xy( ( pls->currentPos.x & ~255 ) + 256, pls->currentPos.y );
-    TryMove( pls->board, nextPos );
+    TryMove( pls, nextPos );
 }
 
 static void TryMoveLeft( playerSeat_t *pls ) {
     c2_t nextPos = c2xy( ( pls->currentPos.x & ~255 ), pls->currentPos.y );
-    TryMove( pls->board, nextPos );
+    TryMove( pls, nextPos );
 }
 
 static void DoRightButton( playerSeat_t *pls, bool_t down ) {
@@ -639,35 +688,36 @@ static void DoLeftButton( playerSeat_t *pls, bool_t down ) {
 }
 
 static void MoveRight_f( void ) {
-    DoRightButton( &x_pls, CMD_ArgvEngaged() );
+    DoRightButton( ArgvSeat(), CMD_ArgvEngaged() );
 }
 
 static void MoveLeft_f( void ) {
-    DoLeftButton( &x_pls, CMD_ArgvEngaged() );
+    DoLeftButton( ArgvSeat(), CMD_ArgvEngaged() );
 }
 
 static void HorzAxis_f( void ) {
     int as = CMD_ArgvAxisSign();
-    DoRightButton( &x_pls, as > 0 );
-    DoLeftButton( &x_pls, as < 0 );
+    DoRightButton( ArgvSeat(), as > 0 );
+    DoLeftButton( ArgvSeat(), as < 0 );
 }
 
-static void Rotate( void ) {
-    shape_t *curShape = &x_shapes[x_pls.currentShape];
-    int bmpIdx = ( x_pls.currentBitmap + 1 ) % curShape->numBitmaps;
-    if ( ! IsBitmapClipping( x_pls.board, c2FixedToInt( x_pls.currentPos ), curShape->bitmaps[bmpIdx] ) ) {
-        x_pls.currentBitmap = bmpIdx;
+static void Rotate( playerSeat_t *pls ) {
+    shape_t *curShape = &x_shapes[pls->currentShape];
+    int bmpIdx = ( pls->currentBitmap + 1 ) % curShape->numBitmaps;
+    if ( ! IsBitmapClipping( pls->board, c2FixedToInt( pls->currentPos ), curShape->bitmaps[bmpIdx] ) ) {
+        pls->currentBitmap = bmpIdx;
     }
 }
 
 static void Rotate_f( void ) {
-    if ( DoButton( CMD_ArgvEngaged(), &x_pls.butRotate ) ) {
-        Rotate();
+    playerSeat_t *pls = ArgvSeat();
+    if ( DoButton( CMD_ArgvEngaged(), &pls->butRotate ) ) {
+        Rotate( pls );
     }
 }
 
 static void MoveDown_f( void ) {
-    DoButton( CMD_ArgvEngaged(), &x_pls.butMoveDown );
+    DoButton( CMD_ArgvEngaged(), &ArgvSeat()->butMoveDown );
 }
 
 static void RegisterVars( void ) {
@@ -701,8 +751,10 @@ static void AppFrame( void ) {
     int szy = Maxi( ws.y / ( TileSize.y * x_boardSize.y ), 1 );
     PixelSize = Mini( szx, szy );
     c2_t tileScreen = c2Divs( c2Div( c2v2( ws ), c2v2( TileSize ) ), PixelSize );
-    GameUpdate( c2xy( 0, 0 ), &x_pls );
-    GameUpdate( c2xy( tileScreen.x - SEAT_SIZE, 0 ), &x_pls );
+    int now = SYS_RealTime();
+    int deltaTime = now - x_prevTime;
+    GameUpdate( c2xy( 0, 0 ), &x_pls[0], deltaTime );
+    GameUpdate( c2xy( tileScreen.x - SEAT_SIZE, 0 ), &x_pls[1], deltaTime );
     if ( VAR_Num( x_showAtlas ) ) {
         DrawAtlas();
     }
@@ -710,6 +762,7 @@ static void AppFrame( void ) {
         UpdateMusicVolume();
     }
     SDL_Delay( 10 );
+    x_prevTime = now;
 }
 
 int main( int argc, char *argv[] ) {
