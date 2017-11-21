@@ -17,7 +17,10 @@ Points gained i.e. (+100)
 IN PROGRESS
 
 Split screen.
-    encode controller id in the command
+    * encode controller id in the command
+    draw the board with an offset
+    remove all x_pls
+    get player by command device
 
 DONE
 
@@ -66,6 +69,7 @@ Tue Sep 12 16:16:19 EEST 2017
 
 #define BOARD_SIZE_X 12
 #define BOARD_SIZE_Y 20
+#define SEAT_SIZE (BOARD_SIZE_X+6)
 const c2_t x_boardSize = { .x = BOARD_SIZE_X, .y = BOARD_SIZE_Y };
 char x_board[] =
 "#          #"
@@ -230,7 +234,7 @@ static Mix_Chunk *x_soundThud;
 static Mix_Chunk *x_soundShift;
 static rImage_t *ASCIITexture;
 static v2_t ASCIITextureSize;
-static v2_t ASCIISymbolSize;
+static v2_t TileSize;
 static int PixelSize;
 static var_t *x_showAtlas;
 static var_t *x_hiscore;
@@ -246,7 +250,7 @@ typedef enum {
 } butState_t;
 
 typedef struct {
-    const char *device;
+    char device[3];
     bool_t gameOver;
     int nextShape;
     int currentShape;
@@ -262,7 +266,15 @@ typedef struct {
     char board[BOARD_SIZE_X * BOARD_SIZE_Y];
 } playerSeat_t;
 
+typedef struct {
+    c2_t boardOffset;
+} playerSeatConf_t;
+
 static playerSeat_t x_pls;
+
+//static playerSeatConf_t x_plsConf = {
+//    .boardOffset = { .x = 10, .y = 0 },
+//};
 
 static void DrawAtlas( void ) {
     v2_t windowSize = R_GetWindowSize();
@@ -272,11 +284,11 @@ static void DrawAtlas( void ) {
 }
 
 static void DrawTileKern( c2_t position, int symbol, color_t color, float partx, int shadow ) {
-    v2_t st0 = v2xy( ( symbol & 15 ) * ASCIISymbolSize.x, ( symbol / 16 ) * ASCIISymbolSize.y );
-    v2_t st1 = v2Add( st0, ASCIISymbolSize );
+    v2_t st0 = v2xy( ( symbol & 15 ) * TileSize.x, ( symbol / 16 ) * TileSize.y );
+    v2_t st1 = v2Add( st0, TileSize );
     st0 = v2xy( st0.x / ASCIITextureSize.x, st0.y / ASCIITextureSize.y );
     st1 = v2xy( st1.x / ASCIITextureSize.x, st1.y / ASCIITextureSize.y );
-    v2_t scale = v2Scale( ASCIISymbolSize, PixelSize );
+    v2_t scale = v2Scale( TileSize, PixelSize );
     partx *= scale.x;
     if ( shadow > 0 ) {
         R_ColorC( colBlack );
@@ -315,7 +327,7 @@ static void LatchButtons( playerSeat_t *pls ) {
 
 static void PickShapeAndReset( playerSeat_t *pls ) {
     pls->currentBitmap = 0;
-    pls->currentShape = x_pls.nextShape;
+    pls->currentShape = pls->nextShape;
     pls->nextShape = GetRandomShape();
     pls->currentPos = c2IntToFixed( c2xy( x_boardSize.x / 2 - 2, -x_shapeSize.y + 1 ) );
 }
@@ -338,6 +350,10 @@ static void UpdateMusicVolume( void ) {
     Mix_VolumeMusic( vol * MIX_MAX_VOLUME / 4 );
 }
 
+//static playerSeat_t* ArgvSeat( void ) {
+//    return NULL;
+//}
+
 static bool_t OnAnyButton_f( int code, bool_t down ) {
     if ( down && x_pls.gameOver ) {
         StartNewGame( &x_pls );
@@ -358,7 +374,7 @@ static void Init( void ) {
     Mix_VolumeChunk( x_soundShift, MIX_MAX_VOLUME / 2 );
 
     ASCIITexture = R_LoadStaticTextureEx( "cp437_12x12.png", &ASCIITextureSize );
-    ASCIISymbolSize = v2Scale( ASCIITextureSize, 1 / 16. );
+    TileSize = v2Scale( ASCIITextureSize, 1 / 16. );
 
     x_prevTime = SYS_RealTime();
     StartNewGame( &x_pls );
@@ -405,17 +421,21 @@ static void CopyBitmap( const char *src, c2_t srcSz,
     }
 }
 
-static void DrawBitmap( c2_t screenPos, const char *bitmap, c2_t razmerNaKarta, color_t color ) {
+static void DrawBitmap( c2_t screenPos, const char *bitmap, c2_t sz, color_t color ) {
     static const int remap[256] = {
         ['@'] = 1,
         ['#'] = 1 + 11 * 16,
     };
-    for ( int i = 0, y = 0; y < razmerNaKarta.y; y++ ) {
-        for ( int x = 0; x < razmerNaKarta.x; x++ ) {
+    for ( int i = 0, y = 0; y < sz.y; y++ ) {
+        for ( int x = 0; x < sz.x; x++ ) {
             int tile = bitmap[i++];
             DrawTile( c2Add( c2xy( x, y ), screenPos ), remap[tile], color );
         }
     }
+}
+
+static void DrawBitmapOff( c2_t off, c2_t screenPos, const char *bitmap, c2_t sz, color_t color ) {
+    DrawBitmap( c2Add( off, screenPos ), bitmap, sz, color );
 }
 
 static void Print( c2_t pos, const char *string, color_t color ) {
@@ -426,6 +446,10 @@ static void Print( c2_t pos, const char *string, color_t color ) {
         DrawTileKern( pos, *p, color, part, 1 );
         pos.x++;
     }
+}
+
+static void PrintOff( c2_t off, c2_t pos, const char *string, color_t color ) {
+    Print( c2Add( pos, off ), string, color );
 }
 
 static bool_t IsBitmapClipping( const char *board, c2_t posOnBoard, const char *bmp ) {
@@ -520,46 +544,53 @@ static void TryMoveHorz( playerSeat_t *pls, int deltaTime ) {
     }
 }
 
-static void GameUpdate( void ) {
+//static c2_t BoardPos( c2_t c ) {
+//    return c2Add( x_plsConf.boardOffset, c );
+//}
+
+static void GameUpdate( c2_t boffset, playerSeat_t *pls ) {
     int now = SYS_RealTime();
     int deltaTime = now - x_prevTime;
-    if ( x_pls.gameOver ) {
-        if ( VAR_Num( x_hiscore ) < x_pls.score ) {
-            VAR_Set( x_hiscore, va( "%d", x_pls.score ), false );
+    if ( pls->gameOver ) {
+        if ( VAR_Num( x_hiscore ) < pls->score ) {
+            VAR_Set( x_hiscore, va( "%d", pls->score ), false );
         }
-        DrawBitmap( c2zero, x_pls.board, x_boardSize, colWhite );
-        Print( c2xy( x_boardSize.x / 2 - 3, x_boardSize.y / 2 - 1 ), "GAME OVER", colRed );
+        DrawBitmapOff( boffset, c2zero, pls->board, x_boardSize, colWhite );
+        PrintOff( boffset, c2xy( x_boardSize.x / 2 - 3, x_boardSize.y / 2 - 1 ), 
+                "GAME OVER", colRed );
         if ( now & 256 ) { 
-            Print( c2xy( x_boardSize.x / 2 - 4, x_boardSize.y / 2 ), "Press Any Button", colRed );
+            PrintOff( boffset, c2xy( x_boardSize.x / 2 - 4, x_boardSize.y / 2 ), 
+                    "Press Any Button", colRed );
         }
     } else {
         TryMoveHorz( &x_pls, deltaTime );
         if ( ! TryMoveDown( &x_pls, deltaTime ) ) {
             if ( ! Drop( &x_pls ) ) {
-                x_pls.gameOver = true;
+                pls->gameOver = true;
                 Mix_HaltMusic();
             } else {
                 EraseFilledLines( &x_pls );
                 PickShapeAndReset( &x_pls );
                 LatchButtons( &x_pls );
-                if ( x_pls.numErasedLines >= 10 ) {
+                if ( pls->numErasedLines >= 10 ) {
                     CON_Printf( "SPEED UP!\n" );
-                    x_pls.numErasedLines = 0;
-                    x_pls.speed += x_pls.speed / 4;
+                    pls->numErasedLines = 0;
+                    pls->speed += pls->speed / 4;
                 }
             }
         } else {
-            DrawBitmap( c2FixedToInt( x_pls.currentPos ), GetCurrentBitmap(), x_shapeSize, colGreen );
+            DrawBitmapOff( boffset, c2FixedToInt( pls->currentPos ), GetCurrentBitmap(), x_shapeSize, colGreen );
         }
-        DrawBitmap( c2zero, x_pls.board, x_boardSize, colWhite );
+        DrawBitmap( boffset, pls->board, x_boardSize, colWhite );
     }
-    Print( c2xy( x_boardSize.x + 1, 1 ), "NEXT", colCyan );
-    shape_t *nextShape = &x_shapes[x_pls.nextShape];
-    DrawBitmap( c2xy( x_boardSize.x + 1, 2 ), nextShape->bitmaps[0], x_shapeSize, colGreen );
-    Print( c2xy( x_boardSize.x + 1, 7 ), "SCORE", colCyan );
-    Print( c2xy( x_boardSize.x + 1, 8 ), va( "%d", x_pls.score ), colWhite );
-    Print( c2xy( x_boardSize.x + 1, 10 ), "HISCORE", colCyan );
-    Print( c2xy( x_boardSize.x + 1, 11 ), va( "%d", ( int )VAR_Num( x_hiscore ) ), colWhite );
+    PrintOff( boffset, c2xy( x_boardSize.x + 1, 1 ), "NEXT", colCyan );
+    shape_t *nextShape = &x_shapes[pls->nextShape];
+    DrawBitmapOff( boffset, c2xy( x_boardSize.x + 1, 2 ), 
+                    nextShape->bitmaps[0], x_shapeSize, colGreen );
+    PrintOff( boffset, c2xy( x_boardSize.x + 1, 7 ), "SCORE", colCyan );
+    PrintOff( boffset, c2xy( x_boardSize.x + 1, 8 ), va( "%d", pls->score ), colWhite );
+    PrintOff( boffset, c2xy( x_boardSize.x + 1, 10 ), "HISCORE", colCyan );
+    PrintOff( boffset, c2xy( x_boardSize.x + 1, 11 ), va( "%d", ( int )VAR_Num( x_hiscore ) ), colWhite );
     x_prevTime = now;
 }
 
@@ -665,8 +696,13 @@ static void RegisterVars( void ) {
 }
 
 static void AppFrame( void ) {
-    PixelSize = Maxi( R_GetWindowSize().y / ( ASCIISymbolSize.y * x_boardSize.y ), 1 );
-    GameUpdate();
+    v2_t ws = R_GetWindowSize();
+    int szx = Maxi( ws.x / ( TileSize.x * SEAT_SIZE * 2 ), 1 );
+    int szy = Maxi( ws.y / ( TileSize.y * x_boardSize.y ), 1 );
+    PixelSize = Mini( szx, szy );
+    c2_t tileScreen = c2Divs( c2Div( c2v2( ws ), c2v2( TileSize ) ), PixelSize );
+    GameUpdate( c2xy( 0, 0 ), &x_pls );
+    GameUpdate( c2xy( tileScreen.x - SEAT_SIZE, 0 ), &x_pls );
     if ( VAR_Num( x_showAtlas ) ) {
         DrawAtlas();
     }
