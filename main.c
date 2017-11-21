@@ -14,7 +14,7 @@ Controller support.
     * rotate with any button
     * move down with any down axis
     * move horizontal any horizontal axis
-    * move using the hat
+    * move using the hat switch
 
 DONE
 
@@ -651,6 +651,8 @@ static void RegisterVars( void ) {
             const char *str = va( "joystick %d button %d", joy, button );
             I_Bind( str, "rotate" );
         }
+        I_Bind( va( "joystick %d hat horizontal", joy ), "horizontalMove" );
+        I_Bind( va( "joystick %d hat vertical", joy ), "-rotate ; +moveDown" );
     }
 }
 
