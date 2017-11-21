@@ -3,18 +3,21 @@
 /*
 
 TODO
-Split screen.
-
-IN PROGRESS
-
-Level number
-Points gained i.e. (+100)
+Any key/button handler exposed from events.c
 Controller support.
     * rotate with any up axis
     * rotate with any button
     * move down with any down axis
     * move horizontal any horizontal axis
     * move using the hat switch
+    hotplug and controllers.
+Level number
+Points gained i.e. (+100)
+
+IN PROGRESS
+
+Split screen.
+    encode controller id in the command
 
 DONE
 
@@ -243,6 +246,7 @@ typedef enum {
 } butState_t;
 
 typedef struct {
+    const char *device;
     bool_t gameOver;
     int nextShape;
     int currentShape;
@@ -321,13 +325,12 @@ static const char* GetAssetPath( const char *name ) {
 }
 
 static void StartNewGame( playerSeat_t *pls ) {
-    pls->gameOver = false;
+    memset( pls, 0, sizeof( *pls ) );
     pls->speed = INITIAL_SPEED;
-    pls->numErasedLines = 0;
     pls->nextShape = GetRandomShape();
-    pls->score = 0;
     memcpy( pls->board, x_board, sizeof( x_board ) );
     PickShapeAndReset( pls );
+    Mix_PlayMusic( x_music, -1 );
 }
 
 static void UpdateMusicVolume( void ) {
@@ -335,18 +338,29 @@ static void UpdateMusicVolume( void ) {
     Mix_VolumeMusic( vol * MIX_MAX_VOLUME / 4 );
 }
 
+static bool_t OnAnyButton_f( int code, bool_t down ) {
+    if ( down && x_pls.gameOver ) {
+        StartNewGame( &x_pls );
+        return true;
+    }
+    return false;
+}
+
 static void Init( void ) {
+    E_SetButtonOverride( OnAnyButton_f );
     x_music = Mix_LoadMUS( GetAssetPath( "ievan_polkka_8bit.ogg" ) );
-    UpdateMusicVolume();
     x_soundPop = Mix_LoadWAV( GetAssetPath( "pop.ogg" ) );
-    Mix_VolumeChunk( x_soundPop, MIX_MAX_VOLUME / 4 );
     x_soundThud = Mix_LoadWAV( GetAssetPath( "thud.ogg" ) );
     x_soundShift = Mix_LoadWAV( GetAssetPath( "shift.ogg" ) );
+
+    UpdateMusicVolume();
+    Mix_VolumeChunk( x_soundPop, MIX_MAX_VOLUME / 4 );
     Mix_VolumeChunk( x_soundShift, MIX_MAX_VOLUME / 2 );
+
     ASCIITexture = R_LoadStaticTextureEx( "cp437_12x12.png", &ASCIITextureSize );
     ASCIISymbolSize = v2Scale( ASCIITextureSize, 1 / 16. );
+
     x_prevTime = SYS_RealTime();
-    Mix_PlayMusic( x_music, -1 );
     StartNewGame( &x_pls );
 }
 
@@ -447,11 +461,14 @@ static bool_t TryMove( const char *board, c2_t nextPos ) {
     return true;
 }
 
-static bool_t TryMoveDown( const char *board, int deltaTime ) {
-    int butMove = x_pls.butMoveDown == BS_PRESSED;
-    int y = x_pls.currentPos.y + deltaTime * x_pls.speed * ( 1 + butMove * 6 ) / 100;
-    c2_t nextPos = c2xy( x_pls.currentPos.x, y );
-    return TryMove( board, nextPos );
+static int GetHoldSpeed( bool_t butDown, int baseSpeed, int deltaTime ) {
+    return deltaTime * baseSpeed * ( 1 + butDown * 6 ) / 100;
+}
+
+static bool_t TryMoveDown( playerSeat_t *pls, int deltaTime ) {
+    int speed = GetHoldSpeed( pls->butMoveDown == BS_PRESSED, pls->speed, deltaTime );
+    c2_t nextPos = c2xy( pls->currentPos.x, pls->currentPos.y + speed );
+    return TryMove( pls->board, nextPos );
 }
 
 static bool_t Drop( playerSeat_t *pls ) {
@@ -492,15 +509,15 @@ static void EraseFilledLines( playerSeat_t *pls ) {
     }
 }
 
-static void TryMoveHorz( const char *board, int deltaTime ) {
+static void TryMoveHorz( playerSeat_t *pls, int deltaTime ) {
     int dir = ( x_pls.butMoveRight == BS_PRESSED ) 
             - ( x_pls.butMoveLeft == BS_PRESSED );
-    if ( dir == 0 ) {
-        return;
+    if ( dir != 0 ) {
+        int speed = GetHoldSpeed( true, INITIAL_SPEED, deltaTime ) / 2;
+        int off = dir > 0 ? speed : -speed;
+        c2_t nextPos = c2xy( pls->currentPos.x + off, pls->currentPos.y );
+        TryMove( pls->board, nextPos );
     }
-    int off = dir > 0 ? deltaTime : -deltaTime;
-    c2_t nextPos = c2Add( x_pls.currentPos, c2xy( off, 0 ) );
-    TryMove( board, nextPos );
 }
 
 static void GameUpdate( void ) {
@@ -513,11 +530,11 @@ static void GameUpdate( void ) {
         DrawBitmap( c2zero, x_pls.board, x_boardSize, colWhite );
         Print( c2xy( x_boardSize.x / 2 - 3, x_boardSize.y / 2 - 1 ), "GAME OVER", colRed );
         if ( now & 256 ) { 
-            Print( c2xy( x_boardSize.x / 2 - 4, x_boardSize.y / 2 ), "Press 'Space'", colRed );
+            Print( c2xy( x_boardSize.x / 2 - 4, x_boardSize.y / 2 ), "Press Any Button", colRed );
         }
     } else {
-        TryMoveHorz( x_pls.board, deltaTime );
-        if ( ! TryMoveDown( x_pls.board, deltaTime ) ) {
+        TryMoveHorz( &x_pls, deltaTime );
+        if ( ! TryMoveDown( &x_pls, deltaTime ) ) {
             if ( ! Drop( &x_pls ) ) {
                 x_pls.gameOver = true;
                 Mix_HaltMusic();
@@ -591,11 +608,11 @@ static void DoLeftButton( playerSeat_t *pls, bool_t down ) {
 }
 
 static void MoveRight_f( void ) {
-    DoRightButton( &x_pls, CMD_Engaged() );
+    DoRightButton( &x_pls, CMD_ArgvEngaged() );
 }
 
 static void MoveLeft_f( void ) {
-    DoLeftButton( &x_pls, CMD_Engaged() );
+    DoLeftButton( &x_pls, CMD_ArgvEngaged() );
 }
 
 static void HorzAxis_f( void ) {
@@ -613,20 +630,13 @@ static void Rotate( void ) {
 }
 
 static void Rotate_f( void ) {
-    if ( DoButton( CMD_Engaged(), &x_pls.butRotate ) ) {
+    if ( DoButton( CMD_ArgvEngaged(), &x_pls.butRotate ) ) {
         Rotate();
     }
 }
 
 static void MoveDown_f( void ) {
-    DoButton( CMD_Engaged(), &x_pls.butMoveDown );
-}
-
-static void Restart_f( void ) {
-    if ( x_pls.gameOver ) {
-        Mix_PlayMusic( x_music, -1 );
-        StartNewGame( &x_pls );
-    }
+    DoButton( CMD_ArgvEngaged(), &x_pls.butMoveDown );
 }
 
 static void RegisterVars( void ) {
@@ -637,13 +647,11 @@ static void RegisterVars( void ) {
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
     CMD_Register( "rotate", Rotate_f );
-    CMD_Register( "restartGame", Restart_f );
     CMD_Register( "horizontalMove", HorzAxis_f );
     I_Bind( "Left", "moveLeft" );
     I_Bind( "Right", "moveRight" );
     I_Bind( "Down", "moveDown" );
     I_Bind( "Up", "rotate" );
-    I_Bind( "Space", "!restartGame" );
     for ( int joy = 0; joy < I_MAX_JOYSTICKS; joy++ ) {
         I_Bind( va( "joystick %d axis 0", joy ), "horizontalMove" );
         I_Bind( va( "joystick %d axis 1", joy ), "-rotate ; +moveDown" );
