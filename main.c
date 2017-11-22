@@ -11,24 +11,26 @@ Controller support.
     * move horizontal any horizontal axis
     * move using the hat switch
     hotplug and controllers.
-Level number
 Points gained i.e. (+100)
 
 IN PROGRESS
 
-Split screen.
+DONE
+
+Wed Nov 22 19:30:30 EET 2017
+
+. Level number
+* Split screen.
     * encode controller id in the command
     * draw the board with an offset
     * remove all x_pls
     * get player by command device
     * don't kill off a seat before both seats are done.
     * both players finished, then on press button should start in the same field
-    optional common speed
-    optional game over only when both are over
+    * optional common speed
+    * optional game over only when both are over
     * announce winner on end game
-    colorize score of the leader
-
-DONE
+    * colorize score of the leader
 
 Tue Nov 14 12:52:33 EET 2017
 
@@ -391,7 +393,11 @@ static playerSeat_t* ArgvSeat( void ) {
     return x_pls;
 }
 
-static bool_t IsAnySeatActive( void ) {
+static bool_t AllSeatsActive( void ) {
+    return x_pls[0].active && x_pls[1].active;
+}
+
+static bool_t AnySeatActive( void ) {
     return x_pls[0].active || x_pls[1].active;
 }
 
@@ -436,7 +442,7 @@ static bool_t OnAnyButton_f( int code, bool_t down ) {
 
 static void Deactivate( playerSeat_t *pls ) {
     pls->active = false;
-    if ( ! IsAnySeatActive() ) {
+    if ( ! AnySeatActive() ) {
         Mix_HaltMusic();
     }
 }
@@ -729,7 +735,7 @@ static bool_t UpdateHiscore( playerSeat_t *pls ) {
     return false;
 }
 
-static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, bool_t showWinner ) {
+static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int scoreCompare ) {
     bool_t keepPlaying = pls->active;
 
     if ( pls->active ) {
@@ -750,15 +756,21 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, bool_t
         PrintInGrid( boffset, x_boardSize.x + 1, 1, "NEXT", colCyan );
         shape_t *nextShape = &x_shapes[pls->nextShape];
         DrawBitmapOff( boffset, c2xy( x_boardSize.x + 1, 2 ), 
-                        nextShape->bitmaps[0], x_shapeSize, colOrange );
+                        nextShape->bitmaps[0], x_shapeSize, colGreen );
         color_t scoreCol = colWhite;
+        color_t hiscoreCol = colWhite;
         if ( UpdateHiscore( pls ) ) {
+            hiscoreCol = colMagenta;
             scoreCol = colMagenta;
+        } else if ( scoreCompare > 0 ) {
+            scoreCol = colGreen;
+        } else if ( scoreCompare < 0 ) {
+            scoreCol = colRed;
         }
         PrintInGrid( boffset, x_boardSize.x + 1, 7, "SCORE", colCyan );
         PrintInGrid( boffset, x_boardSize.x + 1, 8, va( "%d", pls->score ), scoreCol );
         PrintInGrid( boffset, x_boardSize.x + 1, 10, "HISCORE", colCyan );
-        PrintInGrid( boffset, x_boardSize.x + 1, 11, va( "%d", ( int )VAR_Num( x_hiscore ) ), scoreCol );
+        PrintInGrid( boffset, x_boardSize.x + 1, 11, va( "%d", ( int )VAR_Num( x_hiscore ) ), hiscoreCol );
         PrintInGrid( boffset, x_boardSize.x + 1, 13, "LINES", colCyan );
         PrintInGrid( boffset, x_boardSize.x + 1, 14, va( "%d", pls->numErasedLines ), colWhite );
         if ( pls->speed > INITIAL_SPEED ) {
@@ -778,13 +790,13 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, bool_t
         c2_t boxOutline = x_tileSize;
         c2_t boxPos = c2Sub( strPos, boxOutline );
         c2_t boxSize = c2Add( strSize, c2Scale( boxOutline, 2 ) );
-        if ( showWinner ) {
-            boxPos.y -= x_tileSize.y;
-            boxSize.y += x_tileSize.y;
+        if ( scoreCompare > 0 ) {
+            boxPos.y -= x_tileSize.y * 2;
+            boxSize.y += x_tileSize.y * 2;
         }
         DrawBox( boxPos, boxSize, colBlack );
-        if ( showWinner ) {
-            rowPos.y--;
+        if ( scoreCompare > 0 ) {
+            rowPos.y -= 2;
             PrintCenteredInGrid( rowPos, rowSize, "YOU WIN!", colOrange );
         }
         if ( SYS_RealTime() & 512 ) { 
@@ -905,13 +917,22 @@ static void AppFrame( void ) {
     c2_t tileScreen = c2Divs( c2Div( c2v2( ws ), x_tileSize ), x_pixelSize );
     int now = SYS_RealTime();
     int deltaTime = now - x_prevTime;
-    bool_t vsGame = x_pls[0].matchEndTime == x_pls[1].matchEndTime;
-    bool_t p0wins = x_pls[0].score > x_pls[1].score;
-    bool_t p1wins = x_pls[0].score < x_pls[1].score;
-    bool_t p0finished = ! UpdateSeat( c2xy( 0, 0 ), &x_pls[0], deltaTime, vsGame && p0wins );
-    bool_t p1finished = ! UpdateSeat( c2xy( tileScreen.x - SEAT_WIDTH, 0 ), &x_pls[1], deltaTime, vsGame && p1wins );
+    bool_t vsGame = AllSeatsActive() || ( x_pls[0].matchEndTime > 0 && x_pls[0].matchEndTime == x_pls[1].matchEndTime );
+    int p0Leads = 0;
+    int p1Leads = 0;
+    if ( vsGame ) {
+        for ( int i = 0; i < 2; i++ ) {
+            x_pls[i].speed = Maxi( x_pls[0].speed, x_pls[1].speed );
+        }
+        if ( x_pls[0].score != x_pls[1].score ) {
+            p0Leads = x_pls[0].score > x_pls[1].score ? 1 : -1;
+            p1Leads = x_pls[1].score > x_pls[0].score ? 1 : -1;
+        }
+    }
+    bool_t p0finished = ! UpdateSeat( c2xy( 0, 0 ), &x_pls[0], deltaTime, p0Leads );
+    bool_t p1finished = ! UpdateSeat( c2xy( tileScreen.x - SEAT_WIDTH, 0 ), &x_pls[1], deltaTime, p1Leads );
     if ( p0finished && p1finished ) {
-        if ( IsAnySeatActive() ) {
+        if ( AnySeatActive() ) {
             for ( int i = 0; i < 2; i++ ) {
                 playerSeat_t *p = &x_pls[i];
                 if ( p->active ) {
