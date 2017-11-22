@@ -15,6 +15,8 @@ Points gained i.e. (+100)
 
 IN PROGRESS
 
+Draw vertical lines 
+
 DONE
 
 Wed Nov 22 19:30:30 EET 2017
@@ -448,6 +450,7 @@ static void Deactivate( playerSeat_t *pls ) {
 }
 
 static void Init( void ) {
+    R_SetClearColor( colorrgb( 0.1, 0.1, 0.1 ) );
     E_SetButtonOverride( OnAnyButton_f );
     x_music = Mix_LoadMUS( GetAssetPath( "ievan_polkka_8bit.ogg" ) );
     x_soundPop = Mix_LoadWAV( GetAssetPath( "pop.ogg" ) );
@@ -735,6 +738,13 @@ static bool_t UpdateHiscore( playerSeat_t *pls ) {
     return false;
 }
 
+static void DrawStripes( c2_t offset ) {
+    for ( int i = 0; i < x_boardSize.x; i++ ) {
+        c2_t pos = c2Mul( c2Add( offset, c2xy( i, 0 ) ), x_tileSize );
+        DrawBox( c2xy( pos.x - 1, pos.y ), c2xy( 2, x_boardSize.y * x_tileSize.y ), colorrgb( 0.15, 0.15, 0.15 ) );
+    }
+}
+
 static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int scoreCompare ) {
     bool_t keepPlaying = pls->active;
 
@@ -749,6 +759,8 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int sc
             }
         }
     }
+
+    DrawStripes( boffset );
 
     if ( pls->active || pls->score > 0 ) {
         DrawBitmapOff( boffset, c2FixedToInt( pls->currentPos ), GetCurrentBitmap( pls ), x_shapeSize, colGreen );
