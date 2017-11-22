@@ -21,7 +21,12 @@ Split screen.
     * draw the board with an offset
     * remove all x_pls
     * get player by command device
-    don't kill off a seat before both seats are done.
+    * don't kill off a seat before both seats are done.
+    * both players finished, then on press button should start in the same field
+    optional common speed
+    optional game over only when both are over
+    * announce winner on end game
+    colorize score of the leader
 
 DONE
 
@@ -69,7 +74,8 @@ Tue Sep 12 16:16:19 EEST 2017
 #include "zhost.h"
 
 const c2_t x_boardSize = { .x = 12, .y = 21 };
-#define SEAT_SIZE (x_boardSize.x+6)
+#define SEAT_WIDTH (x_boardSize.x+6)
+#define SEAT_HEIGHT (x_boardSize.y-1)
 char x_board[] =
 "#          #"
 "#          #"
@@ -232,10 +238,15 @@ static Mix_Music *x_music;
 static Mix_Chunk *x_soundPop;
 static Mix_Chunk *x_soundThud;
 static Mix_Chunk *x_soundShift;
+static SDL_Texture *x_tileset;
+static c2_t x_tilesetSize;
+static c2_t x_tileSize;
+static int x_glyphLeft;
+static int x_glyphWidth;
 static rImage_t *ASCIITexture;
 static v2_t ASCIITextureSize;
 static v2_t TileSize;
-static int PixelSize;
+static int x_pixelSize;
 static var_t *x_showAtlas;
 static var_t *x_hiscore;
 static var_t *x_musicVolume;
@@ -250,9 +261,10 @@ typedef enum {
 } butState_t;
 
 typedef struct {
+    bool_t active;
+    int matchEndTime;
     int deviceType;
     int deviceId;
-    bool_t activated;
     int nextShape;
     int currentShape;
     int currentBitmap;
@@ -276,23 +288,38 @@ static void DrawAtlas( void ) {
     R_BlendPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
 }
 
-static void DrawTileKern( c2_t position, int symbol, color_t color, float partx, int shadow ) {
-    v2_t st0 = v2xy( ( symbol & 15 ) * TileSize.x, ( symbol / 16 ) * TileSize.y );
-    v2_t st1 = v2Add( st0, TileSize );
-    st0 = v2xy( st0.x / ASCIITextureSize.x, st0.y / ASCIITextureSize.y );
-    st1 = v2xy( st1.x / ASCIITextureSize.x, st1.y / ASCIITextureSize.y );
-    v2_t scale = v2Scale( TileSize, PixelSize );
-    partx *= scale.x;
-    if ( shadow > 0 ) {
-        R_ColorC( colBlack );
-        R_BlendPicV2( v2xy( position.x * partx + shadow * PixelSize, position.y * scale.y + shadow * PixelSize), scale, st0, st1, ASCIITexture );
-    }
-    R_ColorC( color );
-    R_BlendPicV2( v2xy( position.x * partx, position.y * scale.y ), scale, st0, st1, ASCIITexture );
+static void DrawTile( SDL_Rect *dst, int index, color_t color ) {
+    SDL_SetTextureColorMod( x_tileset,
+            ( Uint8 )( color.r * 255 ), 
+            ( Uint8 )( color.g * 255 ),
+            ( Uint8 )( color.b * 255 ) );
+    c2_t st = c2xy( index & 15, index >> 4 );
+    SDL_Rect src = {
+        .x = st.x * x_tileSize.x,
+        .y = st.y * x_tileSize.y,
+        .w = x_tileSize.x,
+        .h = x_tileSize.y,
+    };
+    SDL_RenderCopy( r_renderer, x_tileset, &src, dst );
 }
 
-static void DrawTile( c2_t position, int symbol, color_t color ) {
-    DrawTileKern( position, symbol, color, 1, 0 );
+static void DrawTileInScaledPixels( c2_t spCoord, int index, color_t color ) {
+    SDL_Rect dst = {
+        .x = spCoord.x * x_pixelSize,
+        .y = spCoord.y * x_pixelSize,
+        .w = x_tileSize.x * x_pixelSize,
+        .h = x_tileSize.y * x_pixelSize,
+    };
+    DrawTile( &dst, index, color );
+}
+
+static int DrawChar( c2_t spCoord, int glyph, color_t color ) {
+    DrawTileInScaledPixels( c2xy( spCoord.x - x_glyphLeft, spCoord.y ), glyph, color );
+    return x_glyphWidth;
+}
+
+static void DrawTileInGrid( c2_t gridCoord, int index, color_t color ) {
+    DrawTileInScaledPixels( c2Mul( gridCoord, x_tileSize ), index, color );
 }
 
 static int GetRandomShape( void ) {
@@ -329,14 +356,18 @@ static const char* GetAssetPath( const char *name ) {
     return va( "%sdata/%s", SYS_BaseDir(), name );
 }
 
-static void StartNewGame( int deviceType, int deviceId, playerSeat_t *pls ) {
+static void ClearBoard( playerSeat_t *pls ) {
+    memcpy( pls->board, x_board, sizeof( pls->board ) );
+}
+
+static void StartNewGame( playerSeat_t *pls, int deviceType, int deviceId ) {
     memset( pls, 0, sizeof( *pls ) );
-    pls->activated = true;
+    pls->active = true;
     pls->deviceType = deviceType;
     pls->deviceId = deviceId;
     pls->speed = INITIAL_SPEED;
     pls->nextShape = GetRandomShape();
-    memcpy( pls->board, x_board, sizeof( pls->board ) );
+    ClearBoard( pls );
     PickShapeAndReset( pls );
     if ( ! Mix_PlayingMusic() ) {
         Mix_PlayMusic( x_music, -1 );
@@ -361,28 +392,27 @@ static playerSeat_t* ArgvSeat( void ) {
 }
 
 static bool_t IsAnySeatActive( void ) {
-    for ( int i = 0; i < 2; i++ ) {
-        if ( x_pls[i].activated ) {
-            return true;
-        }
-    }
-    return false;
+    return x_pls[0].active || x_pls[1].active;
 }
 
-static playerSeat_t* GetFreeSeat( void ) {
+static playerSeat_t* GetFreeSeat( int type, int id ) {
+    playerSeat_t *bestSeat = NULL;
     for ( int i = 0; i < 2; i++ ) {
-        playerSeat_t *pls = &x_pls[i];
-        if ( ! pls->activated ) {
-            return pls;
+        playerSeat_t *p = &x_pls[i];
+        if ( p->active ) {
+            continue;
+        }
+        if ( ! bestSeat || ( p->deviceType == type && p->deviceId == id ) ) {
+            bestSeat = p;
         }
     }
-    return NULL;
+    return bestSeat;
 }
 
 static bool_t IsControllerTaken( int type, int id ) {
     for ( int i = 0; i < 2; i++ ) {
         playerSeat_t *pls = &x_pls[i];
-        if ( pls->deviceType == type && pls->deviceId == id ) {
+        if ( pls->active && pls->deviceType == type && pls->deviceId == id ) {
             return true;
         }
     }
@@ -390,13 +420,13 @@ static bool_t IsControllerTaken( int type, int id ) {
 }
 
 static bool_t OnAnyButton_f( int code, bool_t down ) {
-    if ( down ) {
-        playerSeat_t *pls = GetFreeSeat();
+    if ( down && code ) {
+        int type = I_IsJoystickCode( code ) ? 'j' : 'k';
+        int id = '0' + I_DeviceOfCode( code );
+        playerSeat_t *pls = GetFreeSeat( type, id );
         if ( pls ) {
-            int type = I_IsJoystickCode( code ) ? 'j' : 'k';
-            int id = '0' + I_DeviceOfCode( code );
             if ( ! IsControllerTaken( type, id ) ) {
-                StartNewGame( type, id, pls );
+                StartNewGame( pls, type, id );
                 return true;
             }
         }
@@ -404,10 +434,8 @@ static bool_t OnAnyButton_f( int code, bool_t down ) {
     return false;
 }
 
-static void GameOver( playerSeat_t *pls ) {
-    pls->activated = false;
-    pls->deviceType = 0;
-    pls->deviceId = 0;
+static void Deactivate( playerSeat_t *pls ) {
+    pls->active = false;
     if ( ! IsAnySeatActive() ) {
         Mix_HaltMusic();
     }
@@ -424,12 +452,33 @@ static void Init( void ) {
     Mix_VolumeChunk( x_soundPop, MIX_MAX_VOLUME / 4 );
     Mix_VolumeChunk( x_soundShift, MIX_MAX_VOLUME / 2 );
 
+    const char *tilesetImgName = "cp437_12x12.png";
+    int bytesPerPixel;
+    byte *bits = R_LoadImageRaw( tilesetImgName, &x_tilesetSize, &bytesPerPixel, 0 );
+    if ( ! bits ) {
+        static const byte dummy[4] = {
+            0xff, 0xff,
+            0xff, 0xff,
+        };
+        x_tilesetSize = c2xy( 2, 2 );
+        x_tileset = R_CreateStaticTexFromBitmap( dummy, x_tilesetSize, 1 );
+        CON_Printf( "Failed to load %s\n", tilesetImgName );
+    } else {
+        x_tileset = R_CreateStaticTexFromBitmap( bits, x_tilesetSize, bytesPerPixel );
+        A_Free( bits );
+    }
+    SDL_SetTextureBlendMode( x_tileset, SDL_BLENDMODE_BLEND );
     ASCIITexture = R_LoadStaticTextureEx( "cp437_12x12.png", &ASCIITextureSize );
     TileSize = v2Scale( ASCIITextureSize, 1 / 16. );
+    x_tileSize = c2Divs( x_tilesetSize, 16 );
+    x_glyphLeft = x_tileSize.x % 6 == 0 ? x_tileSize.x / 6 : x_tileSize.x / 10;
+    x_glyphWidth = x_tileSize.x - x_glyphLeft * 2;
 
     x_prevTime = SYS_RealTime();
     for ( int i = 0; i < 2; i++ ) {
-        GameOver( &x_pls[i] );
+        playerSeat_t *p = &x_pls[i];
+        ClearBoard( p );
+        Deactivate( p );
     }
 }
 
@@ -482,7 +531,7 @@ static void DrawBitmap( c2_t screenPos, const char *bitmap, c2_t sz, color_t col
     for ( int i = 0, y = 0; y < sz.y; y++ ) {
         for ( int x = 0; x < sz.x; x++ ) {
             int tile = bitmap[i++];
-            DrawTile( c2Add( c2xy( x, y ), screenPos ), remap[tile], color );
+            DrawTileInGrid( c2Add( c2xy( x, y ), screenPos ), remap[tile], color );
         }
     }
 }
@@ -491,18 +540,80 @@ static void DrawBitmapOff( c2_t off, c2_t screenPos, const char *bitmap, c2_t sz
     DrawBitmap( c2Add( off, screenPos ), bitmap, sz, color );
 }
 
-static void Print( c2_t pos, const char *string, color_t color ) {
-    R_ColorC( color );
-    float part = 0.65f;
-    pos.x /= part;
+static void Print( c2_t scaledPixelsPos, const char *string, color_t color ) {
     for ( const char *p = string; *p; p++ ) {
-        DrawTileKern( pos, *p, color, part, 1 );
-        pos.x++;
+        scaledPixelsPos.x += DrawChar( scaledPixelsPos, *p, color );
     }
 }
 
-static void PrintOff( c2_t off, c2_t pos, const char *string, color_t color ) {
-    Print( c2Add( pos, off ), string, color );
+static c2_t CenterBoxInGrid( c2_t gridCoord, c2_t gridSize, c2_t boxSize ) {
+    c2_t pos = c2Mul( gridCoord, x_tileSize ); 
+    c2_t size = c2Mul( gridSize, x_tileSize ); 
+    return c2Add( pos, c2Divs( c2Sub( size, boxSize ), 2 ) );
+}
+
+static void DrawBox( c2_t scaledPixelsPos, c2_t scaledPixelsSize, color_t color ) {
+    SDL_SetRenderDrawColor( r_renderer,
+            ( Uint8 )( color.r * 255 ), 
+            ( Uint8 )( color.g * 255 ),
+            ( Uint8 )( color.b * 255 ),
+            ( Uint8 )( color.alpha * 255 ) );
+    SDL_SetRenderDrawBlendMode( r_renderer, SDL_BLENDMODE_BLEND );
+    SDL_Rect rect = {
+        .x = x_pixelSize * scaledPixelsPos.x,
+        .y = x_pixelSize * scaledPixelsPos.y,
+        .w = x_pixelSize * scaledPixelsSize.x,
+        .h = x_pixelSize * scaledPixelsSize.y,
+    };
+    SDL_RenderFillRect( r_renderer, &rect );
+}
+
+//static void DrawBoxCenteredInGrid( c2_t gridCoord, c2_t gridSize, c2_t box, color_t color ) {
+//    DrawBox( CenterBoxInGrid( gridCoord, gridSize, box ), box, color );
+//}
+
+static c2_t MeasurePrint( const char *string ) {
+    return c2xy( x_glyphWidth * COM_StrLen( string ), x_tileSize.y );
+}
+
+static void PrintCenteredInGridSz( c2_t gridCoord, c2_t gridSize, c2_t strSize, const char *string, color_t color ) {
+    Print( CenterBoxInGrid( gridCoord, gridSize, strSize ), string, color );
+}
+
+static void PrintCenteredInGrid( c2_t gridCoord, c2_t gridSize, const char *string, color_t color ) {
+    c2_t strSize = MeasurePrint( string );
+    PrintCenteredInGridSz( gridCoord, gridSize, strSize, string, color );
+}
+
+//static void PrintBoxedCenteredInGrid( c2_t gridCoord, c2_t gridSize, const char *string, color_t strColor, c2_t boxOutline, color_t boxColor ) {
+//    c2_t strSize = MeasurePrint( string );
+//    c2_t strPos = CenterBoxInGrid( gridCoord, gridSize, strSize );
+//    c2_t boxPos = c2Sub( strPos, boxOutline );
+//    c2_t boxSize = c2Add( strSize, c2Scale( boxOutline, 2 ) );
+//    DrawBox( boxPos, boxSize, boxColor );
+//    Print( strPos, string, strColor );
+//}
+
+static void PrintInGrid( c2_t offset, int x, int y, const char *string, 
+                            color_t color ) {
+    c2_t xy = c2Mul( c2Add( c2xy( x, y ), offset ), x_tileSize );
+    Print( xy, string, color );
+} 
+
+static bool_t IsBitmapPartiallyOff( const char *board, c2_t posOnBoard, const char *bmp ) {
+    for ( int y = 0; y < x_shapeSize.y; y++ ) {
+        for ( int x = 0; x < x_shapeSize.x; x++ ) {
+            c2_t pos = c2xy( x, y );
+            int tile = ReadTile( pos, bmp, x_shapeSize );
+            if ( ! IsBlank( tile ) ) {
+                c2_t tilePos = c2Add( pos, posOnBoard );
+                if ( tilePos.y < 0 ) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 static bool_t IsBitmapClipping( const char *board, c2_t posOnBoard, const char *bmp ) {
@@ -548,11 +659,22 @@ static bool_t TryMoveDown( playerSeat_t *pls, int deltaTime ) {
     return TryMove( pls, nextPos );
 }
 
+//static bool_t IsFilledUp( playerSeat_t *pls ) {
+//    c2_t pos = c2FixedToInt( pls->currentPos );
+//    const char *bitmap = GetCurrentBitmap( pls );
+//    return IsBitmapPartiallyOff( pls->board, pos, bitmap );
+//}
+
 static bool_t Drop( playerSeat_t *pls ) {
-    CopyBitmap( GetCurrentBitmap( pls ), x_shapeSize, pls->board, x_boardSize, c2FixedToInt( pls->currentPos ) );
+    c2_t pos = c2FixedToInt( pls->currentPos );
+    const char *bitmap = GetCurrentBitmap( pls );
+    if ( IsBitmapPartiallyOff( pls->board, pos, bitmap ) ) {
+        return false;
+    }
+    CopyBitmap( bitmap, x_shapeSize, pls->board, x_boardSize, pos );
     Mix_PlayChannel( -1, x_soundThud, 0 );
     pls->score += pls->speed / 2;
-    return pls->currentPos.y + x_shapeSize.y >= 0;
+    return true;
 }
 
 static void EraseFilledLines( playerSeat_t *pls ) {
@@ -569,8 +691,10 @@ static void EraseFilledLines( playerSeat_t *pls ) {
         if ( numFull == x_boardSize.x ) {
             result = true;
             pls->numErasedLines++;
+            if ( ( pls->numErasedLines % 10 ) == 0 ) {
+                pls->speed += pls->speed / 4;
+            }
             bonus *= 2;
-            CON_Printf( "Pop a line. TOTAL LINES: %d\n", pls->numErasedLines );
             for ( int i = y; i >= 1; i-- ) {
                 char *dst = &pls->board[( i - 0 ) * x_boardSize.x];
                 char *src = &pls->board[( i - 1 ) * x_boardSize.x];
@@ -597,50 +721,78 @@ static void TryMoveHorz( playerSeat_t *pls, int deltaTime ) {
     }
 }
 
-static void UpdateHiscore( playerSeat_t *pls ) {
-    if ( VAR_Num( x_hiscore ) < pls->score ) {
+static bool_t UpdateHiscore( playerSeat_t *pls ) {
+    if ( VAR_Num( x_hiscore ) <= pls->score ) {
         VAR_Set( x_hiscore, va( "%d", pls->score ), false );
+        return true;
     }
+    return false;
 }
 
-static void GameUpdate( c2_t boffset, playerSeat_t *pls, int deltaTime ) {
-    if ( ! pls->activated ) {
-        DrawBitmapOff( boffset, c2zero, pls->board, x_boardSize, colWhite );
-        //PrintOff( boffset, c2xy( x_boardSize.x / 2 - 3, x_boardSize.y / 2 - 1 ), 
-        //        "GAME OVER", colRed );
-        if ( SYS_RealTime() & 256 ) { 
-            PrintOff( boffset, c2xy( x_boardSize.x / 2 - 5, x_boardSize.y / 2 ), 
-                    "Press Any Button", colMagenta );
-        }
-    } else {
+static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, bool_t showWinner ) {
+    bool_t keepPlaying = pls->active;
+
+    if ( pls->active ) {
         TryMoveHorz( pls, deltaTime );
         if ( ! TryMoveDown( pls, deltaTime ) ) {
-            if ( ! Drop( pls ) ) {
-                GameOver( pls );
-            } else {
+            keepPlaying = Drop( pls );
+            if ( keepPlaying ) {
                 EraseFilledLines( pls );
                 PickShapeAndReset( pls );
                 LatchButtons( pls );
-                if ( pls->numErasedLines >= 10 ) {
-                    CON_Printf( "SPEED UP!\n" );
-                    pls->numErasedLines = 0;
-                    pls->speed += pls->speed / 4;
-                }
             }
-        } else {
-            DrawBitmapOff( boffset, c2FixedToInt( pls->currentPos ), GetCurrentBitmap( pls ), x_shapeSize, colGreen );
         }
+    }
+
+    if ( pls->active || pls->score > 0 ) {
+        DrawBitmapOff( boffset, c2FixedToInt( pls->currentPos ), GetCurrentBitmap( pls ), x_shapeSize, colGreen );
+        DrawBitmap( boffset, pls->board, x_boardSize, colWhite );
+        PrintInGrid( boffset, x_boardSize.x + 1, 1, "NEXT", colCyan );
+        shape_t *nextShape = &x_shapes[pls->nextShape];
+        DrawBitmapOff( boffset, c2xy( x_boardSize.x + 1, 2 ), 
+                        nextShape->bitmaps[0], x_shapeSize, colOrange );
+        color_t scoreCol = colWhite;
+        if ( UpdateHiscore( pls ) ) {
+            scoreCol = colMagenta;
+        }
+        PrintInGrid( boffset, x_boardSize.x + 1, 7, "SCORE", colCyan );
+        PrintInGrid( boffset, x_boardSize.x + 1, 8, va( "%d", pls->score ), scoreCol );
+        PrintInGrid( boffset, x_boardSize.x + 1, 10, "HISCORE", colCyan );
+        PrintInGrid( boffset, x_boardSize.x + 1, 11, va( "%d", ( int )VAR_Num( x_hiscore ) ), scoreCol );
+        PrintInGrid( boffset, x_boardSize.x + 1, 13, "LINES", colCyan );
+        PrintInGrid( boffset, x_boardSize.x + 1, 14, va( "%d", pls->numErasedLines ), colWhite );
+        if ( pls->speed > INITIAL_SPEED ) {
+            PrintInGrid( boffset, x_boardSize.x + 1, 16, "SPEED", colCyan );
+            PrintInGrid( boffset, x_boardSize.x + 1, 17, va( "x%.2f", pls->speed / ( float )INITIAL_SPEED ), colWhite );
+        }
+    } else {
         DrawBitmap( boffset, pls->board, x_boardSize, colWhite );
     }
-    PrintOff( boffset, c2xy( x_boardSize.x + 1, 1 ), "NEXT", colCyan );
-    shape_t *nextShape = &x_shapes[pls->nextShape];
-    DrawBitmapOff( boffset, c2xy( x_boardSize.x + 1, 2 ), 
-                    nextShape->bitmaps[0], x_shapeSize, colGreen );
-    PrintOff( boffset, c2xy( x_boardSize.x + 1, 7 ), "SCORE", colCyan );
-    PrintOff( boffset, c2xy( x_boardSize.x + 1, 8 ), va( "%d", pls->score ), colWhite );
-    PrintOff( boffset, c2xy( x_boardSize.x + 1, 10 ), "HISCORE", colCyan );
-    PrintOff( boffset, c2xy( x_boardSize.x + 1, 11 ), va( "%d", ( int )VAR_Num( x_hiscore ) ), colWhite );
-    UpdateHiscore( pls );
+
+    if ( ! pls->active ) {
+        const char *string = "Press a Button";
+        c2_t strSize = MeasurePrint( string );
+        c2_t rowPos = c2xy( boffset.x, boffset.y + x_boardSize.y / 2 ); 
+        c2_t rowSize = c2xy( x_boardSize.x, 1 ); 
+        c2_t strPos = CenterBoxInGrid( rowPos, rowSize, strSize );
+        c2_t boxOutline = x_tileSize;
+        c2_t boxPos = c2Sub( strPos, boxOutline );
+        c2_t boxSize = c2Add( strSize, c2Scale( boxOutline, 2 ) );
+        if ( showWinner ) {
+            boxPos.y -= x_tileSize.y;
+            boxSize.y += x_tileSize.y;
+        }
+        DrawBox( boxPos, boxSize, colBlack );
+        if ( showWinner ) {
+            rowPos.y--;
+            PrintCenteredInGrid( rowPos, rowSize, "YOU WIN!", colOrange );
+        }
+        if ( SYS_RealTime() & 512 ) { 
+            Print( strPos, string, colWhite );
+        }
+    }
+
+    return keepPlaying;
 }
 
 static bool_t DoButton( bool_t down, butState_t *button ) {
@@ -747,14 +899,28 @@ static void RegisterVars( void ) {
 
 static void AppFrame( void ) {
     v2_t ws = R_GetWindowSize();
-    int szx = Maxi( ws.x / ( TileSize.x * SEAT_SIZE * 2 ), 1 );
-    int szy = Maxi( ws.y / ( TileSize.y * x_boardSize.y ), 1 );
-    PixelSize = Mini( szx, szy );
-    c2_t tileScreen = c2Divs( c2Div( c2v2( ws ), c2v2( TileSize ) ), PixelSize );
+    int szx = Maxi( ws.x / ( x_tileSize.x * SEAT_WIDTH * 2 ), 1 );
+    int szy = Maxi( ws.y / ( x_tileSize.y * SEAT_HEIGHT ), 1 );
+    x_pixelSize = Mini( szx, szy );
+    c2_t tileScreen = c2Divs( c2Div( c2v2( ws ), x_tileSize ), x_pixelSize );
     int now = SYS_RealTime();
     int deltaTime = now - x_prevTime;
-    GameUpdate( c2xy( 0, 0 ), &x_pls[0], deltaTime );
-    GameUpdate( c2xy( tileScreen.x - SEAT_SIZE, 0 ), &x_pls[1], deltaTime );
+    bool_t vsGame = x_pls[0].matchEndTime == x_pls[1].matchEndTime;
+    bool_t p0wins = x_pls[0].score > x_pls[1].score;
+    bool_t p1wins = x_pls[0].score < x_pls[1].score;
+    bool_t p0finished = ! UpdateSeat( c2xy( 0, 0 ), &x_pls[0], deltaTime, vsGame && p0wins );
+    bool_t p1finished = ! UpdateSeat( c2xy( tileScreen.x - SEAT_WIDTH, 0 ), &x_pls[1], deltaTime, vsGame && p1wins );
+    if ( p0finished && p1finished ) {
+        if ( IsAnySeatActive() ) {
+            for ( int i = 0; i < 2; i++ ) {
+                playerSeat_t *p = &x_pls[i];
+                if ( p->active ) {
+                    p->matchEndTime = now;
+                }
+                Deactivate( p );
+            }
+        }
+    }
     if ( VAR_Num( x_showAtlas ) ) {
         DrawAtlas();
     }
