@@ -133,28 +133,28 @@ static shape_t x_shapes[] = {
         .numBitmaps = 2,
         .bitmaps = {
             "    "
-            "@@  "
-            " @@ "
+            "AA  "
+            " AA "
             "    "
             ,
             "    "
-            "  @ "
-            " @@ "
-            " @  "
+            "  A "
+            " AA "
+            " A  "
         },
     },
     {
         .numBitmaps = 2,
         .bitmaps = {
             "    "
-            "  @@"
-            " @@ "
+            "  BB"
+            " BB "
             "    "
             , 
             "    "
-            " @  "
-            " @@ "
-            "  @ "
+            " B  "
+            " BB "
+            "  B "
         },
     },
     {
@@ -162,8 +162,8 @@ static shape_t x_shapes[] = {
         .bitmaps = {
             "    "
             "    "
-            " @@ "
-            " @@ "
+            " CC "
+            " CC "
         },
     },
     {
@@ -171,70 +171,70 @@ static shape_t x_shapes[] = {
         .bitmaps = {
             "    "
             "    "
-            " @@@"
-            "  @ "
+            " DDD"
+            "  D "
             , 
             "    "
-            "  @ "
-            "  @@"
-            "  @ "
+            "  D "
+            "  DD"
+            "  D "
             , 
             "    "
-            "  @ "
-            " @@@"
+            "  D "
+            " DDD"
             "    "
             , 
             "    "
-            "  @ "
-            " @@ "
-            "  @ "
+            "  D "
+            " DD "
+            "  D "
         },
     },
     {
         .numBitmaps = 4,
         .bitmaps = {
             "    "
-            " @@ "
-            " @  "
-            " @  "
+            " EE "
+            " E  "
+            " E  "
             , 
             "    "
-            "@   "
-            "@@@ "
+            "E   "
+            "EEE "
             "    "
             , 
             "    "
-            " @  "
-            " @  "
-            "@@  "
+            " E  "
+            " E  "
+            "EE  "
             , 
             "    "
             "    "
-            "@@@ "
-            "  @ "
+            "EEE "
+            "  E "
         },
     },
     {
         .numBitmaps = 4,
         .bitmaps = {
             "    "
-            " @@ "
-            "  @ "
-            "  @ "
+            " FF "
+            "  F "
+            "  F "
             ,
             "    "
             "    "
-            " @@@"
-            " @  "
+            " FFF"
+            " F  "
             ,
             "    "
-            "  @ "
-            "  @ "
-            "  @@"
+            "  F "
+            "  F "
+            "  FF"
             ,
             "    "
-            "   @"
-            " @@@"
+            "   F"
+            " FFF"
             "    "
         },
     },
@@ -547,6 +547,12 @@ static void CopyBitmap( const char *src, c2_t srcSz,
 static void DrawBitmap( c2_t screenPos, const char *bitmap, c2_t sz, color_t color ) {
     static const int remap[256] = {
         ['@'] = 1,
+        ['A'] = 2,
+        ['B'] = 3,
+        ['C'] = 4,
+        ['D'] = 5,
+        ['E'] = 6,
+        ['F'] = 7,
         ['#'] = 1 + 11 * 16,
     };
     for ( int i = 0, y = 0; y < sz.y; y++ ) {
@@ -771,12 +777,12 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int sc
     DrawStripes( boffset );
 
     if ( pls->active || pls->score > 0 ) {
-        DrawBitmapOff( boffset, c2FixedToInt( pls->currentPos ), GetCurrentBitmap( pls ), x_shapeSize, colGreen );
+        DrawBitmapOff( boffset, c2FixedToInt( pls->currentPos ), GetCurrentBitmap( pls ), x_shapeSize, colWhite );
         DrawBitmap( boffset, pls->board, x_boardSize, colWhite );
         PrintInGrid( boffset, x_boardSize.x + 1, 1, "NEXT", colCyan );
         shape_t *nextShape = &x_shapes[pls->nextShape];
         DrawBitmapOff( boffset, c2xy( x_boardSize.x + 1, 2 ), 
-                        nextShape->bitmaps[0], x_shapeSize, colGreen );
+                        nextShape->bitmaps[0], x_shapeSize, colWhite );
         color_t scoreCol = colWhite;
         color_t hiscoreCol = colWhite;
         if ( UpdateHiscore( pls ) ) {
