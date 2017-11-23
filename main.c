@@ -677,7 +677,14 @@ static int GetHoldSpeed( bool_t butDown, int baseSpeed, int deltaTime ) {
 static bool_t TryMoveDown( playerSeat_t *pls, int deltaTime ) {
     int speed = GetHoldSpeed( pls->butMoveDown == BS_PRESSED, pls->speed, deltaTime );
     c2_t nextPos = c2xy( pls->currentPos.x, pls->currentPos.y + speed );
-    return TryMove( pls, nextPos );
+    bool_t result = TryMove( pls, nextPos );
+    if ( ! result ) {
+        // on faster speeds stuff gets dropped above
+        do {
+            nextPos.y -= 256;
+        } while ( ! TryMove( pls, nextPos ) );
+    }
+    return result;
 }
 
 static bool_t Drop( playerSeat_t *pls ) {
@@ -696,14 +703,12 @@ static void EraseFilledLines( playerSeat_t *pls ) {
     int bonus = 1;
     bool_t result = false;
     for ( int y = x_boardSize.y - 2; y >= 1; ) {
-        int numFull = 0;
-        for ( int x = 0; x < x_boardSize.x; x++ ) {
+        int numBlanks = x_boardSize.x - 2;
+        for ( int x = 1; x < x_boardSize.x - 1; x++ ) {
             int tile = ReadTile( c2xy( x, y ), pls->board, x_boardSize );
-            if ( ! IsBlank( tile ) ) {
-                numFull++;
-            }
+            numBlanks -= ! IsBlank( tile );
         }
-        if ( numFull == x_boardSize.x ) {
+        if ( ! numBlanks ) {
             result = true;
             pls->numErasedLines++;
             bonus *= 2;
