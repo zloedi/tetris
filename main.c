@@ -3,6 +3,7 @@
 /*
 
 TODO
+Set controller dead zone from app, store var in app.
 Any key/button handler exposed from events.c
 Controller support.
     * rotate with any up axis
@@ -12,14 +13,16 @@ Controller support.
     * move using the hat switch
     hotplug and controllers.
 Points gained i.e. (+100)
+Both players increase speed each 10 lines
+The lines counter should be common to both and 20 in a VS game
 
 IN PROGRESS
-
-Draw vertical lines 
 
 DONE
 
 Wed Nov 22 19:30:30 EET 2017
+
+* Draw vertical lines 
 
 . Level number
 * Split screen.
@@ -254,9 +257,14 @@ static int x_pixelSize;
 static var_t *x_showAtlas;
 static var_t *x_hiscore;
 static var_t *x_musicVolume;
+static var_t *x_numLinesPerLevel;
+static var_t *x_skipBoards;
+static var_t *x_showSpeedFunc;
+static var_t *x_speedFuncMax;
+static var_t *x_speedCoefA;
+static var_t *x_speedCoefB;
+static var_t *x_speedCoefC;
 static int x_prevTime;
-
-#define INITIAL_SPEED 40
 
 typedef enum {
     BS_RELEASED,
@@ -364,12 +372,16 @@ static void ClearBoard( playerSeat_t *pls ) {
     memcpy( pls->board, x_board, sizeof( pls->board ) );
 }
 
+static inline int InitialSpeed( void ) {
+    return VAR_Num( x_speedCoefC );
+}
+
 static void StartNewGame( playerSeat_t *pls, int deviceType, int deviceId ) {
     memset( pls, 0, sizeof( *pls ) );
     pls->active = true;
     pls->deviceType = deviceType;
     pls->deviceId = deviceId;
-    pls->speed = INITIAL_SPEED;
+    pls->speed = InitialSpeed();
     pls->nextShape = GetRandomShape();
     ClearBoard( pls );
     PickShapeAndReset( pls );
@@ -668,12 +680,6 @@ static bool_t TryMoveDown( playerSeat_t *pls, int deltaTime ) {
     return TryMove( pls, nextPos );
 }
 
-//static bool_t IsFilledUp( playerSeat_t *pls ) {
-//    c2_t pos = c2FixedToInt( pls->currentPos );
-//    const char *bitmap = GetCurrentBitmap( pls );
-//    return IsBitmapPartiallyOff( pls->board, pos, bitmap );
-//}
-
 static bool_t Drop( playerSeat_t *pls ) {
     c2_t pos = c2FixedToInt( pls->currentPos );
     const char *bitmap = GetCurrentBitmap( pls );
@@ -700,9 +706,6 @@ static void EraseFilledLines( playerSeat_t *pls ) {
         if ( numFull == x_boardSize.x ) {
             result = true;
             pls->numErasedLines++;
-            if ( ( pls->numErasedLines % 10 ) == 0 ) {
-                pls->speed += pls->speed / 4;
-            }
             bonus *= 2;
             for ( int i = y; i >= 1; i-- ) {
                 char *dst = &pls->board[( i - 0 ) * x_boardSize.x];
@@ -723,7 +726,7 @@ static void TryMoveHorz( playerSeat_t *pls, int deltaTime ) {
     int dir = ( pls->butMoveRight == BS_PRESSED ) 
             - ( pls->butMoveLeft == BS_PRESSED );
     if ( dir != 0 ) {
-        int speed = GetHoldSpeed( true, INITIAL_SPEED, deltaTime ) / 2;
+        int speed = GetHoldSpeed( true, 40, deltaTime ) / 2;
         int off = dir > 0 ? speed : -speed;
         c2_t nextPos = c2xy( pls->currentPos.x + off, pls->currentPos.y );
         TryMove( pls, nextPos );
@@ -785,9 +788,9 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int sc
         PrintInGrid( boffset, x_boardSize.x + 1, 11, va( "%d", ( int )VAR_Num( x_hiscore ) ), hiscoreCol );
         PrintInGrid( boffset, x_boardSize.x + 1, 13, "LINES", colCyan );
         PrintInGrid( boffset, x_boardSize.x + 1, 14, va( "%d", pls->numErasedLines ), colWhite );
-        if ( pls->speed > INITIAL_SPEED ) {
+        if ( pls->speed > InitialSpeed() ) {
             PrintInGrid( boffset, x_boardSize.x + 1, 16, "SPEED", colCyan );
-            PrintInGrid( boffset, x_boardSize.x + 1, 17, va( "x%.2f", pls->speed / ( float )INITIAL_SPEED ), colWhite );
+            PrintInGrid( boffset, x_boardSize.x + 1, 17, va( "x%.2f", pls->speed / ( float )InitialSpeed() ), colWhite );
         }
     } else {
         DrawBitmap( boffset, pls->board, x_boardSize, colWhite );
@@ -900,6 +903,13 @@ static void RegisterVars( void ) {
     x_showAtlas = VAR_Register( "showAtlas", "0" );
     x_hiscore = VAR_Register( "hiscore", "0" );
     x_musicVolume = VAR_Register( "musicVolume", "1" );
+    x_numLinesPerLevel = VAR_Register( "numLinesPerLevel", "10" );
+    x_skipBoards = VAR_Register( "skipBoards", "0" );
+    x_showSpeedFunc = VAR_Register( "showSpeedParable", "0" );
+    x_speedFuncMax = VAR_Register( "speedFuncMax", "0.75" );
+    x_speedCoefA = VAR_Register( "speedCoefA", "400" );
+    x_speedCoefB = VAR_Register( "speedCoefB", "50" );
+    x_speedCoefC = VAR_Register( "speedCoefC", "40" );
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
@@ -921,21 +931,80 @@ static void RegisterVars( void ) {
     }
 }
 
-static void AppFrame( void ) {
+static inline int Square8bitFP( int x, int scale ) {
+    return ( ( x * x * scale ) >> 8 ) >> 8;
+}
+
+static int GetSpeedParam( int i, int fpStep, int coefA, int coefB, int coefC ) {
+    int x = i * fpStep;
+    int y = Square8bitFP( x, coefA );
+    y += ( coefB * x ) >> 8;
+    y += coefC;
+    return y;
+}
+
+static int GetSpeed( int i ) {
+    int step = 256 * VAR_Num( x_speedFuncMax ) / 10;
+    int coefA = VAR_Num( x_speedCoefA );
+    int coefB = VAR_Num( x_speedCoefB );
+    int coefC = VAR_Num( x_speedCoefC );
+    return GetSpeedParam( i, step, coefA, coefB, coefC );
+}
+
+static void DrawSpeedFunc( float showVal ) {
+    R_ColorC( colWhite );
+    v2_t start = v2xy( 0, R_GetWindowSize().y );
+    R_ColorC( colWhite );
+    R_DBGLineBegin( start );
+    float step = VAR_Num( x_speedFuncMax ) / 10;
+    float coefA = VAR_Num( x_speedCoefA );
+    float coefB = VAR_Num( x_speedCoefB );
+    float coefC = VAR_Num( x_speedCoefC );
+    bool_t changed = VAR_Changed( x_speedFuncMax ) 
+        || VAR_Changed( x_speedCoefA )
+        || VAR_Changed( x_speedCoefB )
+        || VAR_Changed( x_speedCoefC );
+    for ( int i = 0; i < 10; i++ ) {
+        int x = i * step * coefA;
+        int y = GetSpeedParam( i, step * 256, coefA , coefB, coefC );
+        R_DBGLineTo( v2Add( start, v2xy( x, -y ) ) );
+        if ( changed ) {
+            PrintC2( c2xy( x, y ) );
+        }
+    }
+    for ( int i = 0; i < 10; i++ ) {
+        int x = i * step * coefA;
+        int y = GetSpeedParam( i, step * 256, coefA , coefB, coefC );
+        v2_t p0 = v2xy( x, start.y );
+        v2_t p1 = v2xy( x, start.y - y );
+        R_DBGLine( p0, p1 );
+    }
+}
+
+static void UpdateAllSeats( int time, int deltaTime ) {
     v2_t ws = R_GetWindowSize();
     int szx = Maxi( ws.x / ( x_tileSize.x * SEAT_WIDTH * 2 ), 1 );
     int szy = Maxi( ws.y / ( x_tileSize.y * SEAT_HEIGHT ), 1 );
     x_pixelSize = Mini( szx, szy );
     c2_t tileScreen = c2Divs( c2Div( c2v2( ws ), x_tileSize ), x_pixelSize );
-    int now = SYS_RealTime();
-    int deltaTime = now - x_prevTime;
+    int numErasedLines = 0;
+    for ( int i = 0; i < 2; i++ ) {
+        playerSeat_t *p = &x_pls[i];
+        if ( p->active ) {
+            numErasedLines += p->numErasedLines;
+        }
+    }
+    int level = numErasedLines / VAR_Num( x_numLinesPerLevel );
+    for ( int i = 0; i < 2; i++ ) {
+        playerSeat_t *p = &x_pls[i];
+        if ( p->active ) {
+            p->speed = GetSpeed( level );
+        }
+    }
     bool_t vsGame = AllSeatsActive() || ( x_pls[0].matchEndTime > 0 && x_pls[0].matchEndTime == x_pls[1].matchEndTime );
     int p0Leads = 0;
     int p1Leads = 0;
     if ( vsGame ) {
-        for ( int i = 0; i < 2; i++ ) {
-            x_pls[i].speed = Maxi( x_pls[0].speed, x_pls[1].speed );
-        }
         if ( x_pls[0].score != x_pls[1].score ) {
             p0Leads = x_pls[0].score > x_pls[1].score ? 1 : -1;
             p1Leads = x_pls[1].score > x_pls[0].score ? 1 : -1;
@@ -948,17 +1017,29 @@ static void AppFrame( void ) {
             for ( int i = 0; i < 2; i++ ) {
                 playerSeat_t *p = &x_pls[i];
                 if ( p->active ) {
-                    p->matchEndTime = now;
+                    p->matchEndTime = time;
                 }
                 Deactivate( p );
             }
         }
+    }
+}
+
+static void AppFrame( void ) {
+    int now = SYS_RealTime();
+    int deltaTime = now - x_prevTime;
+    if ( ! VAR_Num( x_skipBoards ) ) {
+        UpdateAllSeats( now, deltaTime );
     }
     if ( VAR_Num( x_showAtlas ) ) {
         DrawAtlas();
     }
     if ( VAR_Changed( x_musicVolume ) ) {
         UpdateMusicVolume();
+    }
+    float showFunc = VAR_Num( x_showSpeedFunc );
+    if ( showFunc ) {
+        DrawSpeedFunc( showFunc );
     }
     SDL_Delay( 10 );
     x_prevTime = now;
