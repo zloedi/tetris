@@ -5,8 +5,7 @@
 TODO
 Rotate even at edges of board
 Fix joystick locks and other crap on windows
-Don't get the grids too separated on wide screens
-Show where the figure will fall as silhouette
+No dead zone in input code, handle it in app
 Controller support.
     * rotate with any up axis
     * rotate with any button
@@ -14,16 +13,20 @@ Controller support.
     * move horizontal any horizontal axis
     * move using the hat switch
     hotplug and controllers.
-Points gained i.e. (+100)
-Both players increase speed each 10 lines
-The lines counter should be common to both and 20 in a VS game
 
 IN PROGRESS
+
+Show where the figure will fall as silhouette
 
 DONE
 
 Fri Nov 24 10:48:46 EET 2017
+
+* The lines counter should be common to both and 20 in a VS game
+. Points gained i.e. (+100)
+* Don't get the grids too separated on wide screens
 * Set controller dead zone from app, store var in app.
+* Both players increase speed each 10 lines
 
 Wed Nov 22 19:30:30 EET 2017
 
@@ -265,6 +268,7 @@ static var_t *x_hiscore;
 static var_t *x_musicVolume;
 static var_t *x_numLinesPerLevel;
 static var_t *x_skipBoards;
+static var_t *x_skipGhostShape;
 static var_t *x_showSpeedFunc;
 static var_t *x_speedFuncMax;
 static var_t *x_speedCoefA;
@@ -313,6 +317,7 @@ static void DrawTile( SDL_Rect *dst, int index, color_t color ) {
             ( Uint8 )( color.r * 255 ), 
             ( Uint8 )( color.g * 255 ),
             ( Uint8 )( color.b * 255 ) );
+    SDL_SetTextureAlphaMod( x_tileset, ( Uint8 )( color.alpha * 255 ) );
     c2_t st = c2xy( index & 15, index >> 4 );
     SDL_Rect src = {
         .x = st.x * x_tileSize.x,
@@ -683,6 +688,16 @@ static bool_t IsBitmapClipping( const char *board, c2_t posOnBoard, const char *
     return false;
 }
 
+static bool_t TraceDownOnBoard( const char *board, c2_t origin, const char *bmp, c2_t *outResult ) {
+    for ( c2_t res = origin; res.y < x_boardSize.y - 1; res.y++ ) {
+        if ( IsBitmapClipping( board, c2xy( res.x, res.y + 1 ), bmp ) ) {
+            *outResult = res;
+            return true;
+        }
+    }
+    return false;
+}
+
 static const char* GetCurrentBitmap( playerSeat_t *pls ) {
     shape_t *curShape = &x_shapes[pls->currentShape];
     return curShape->bitmaps[pls->currentBitmap];
@@ -805,7 +820,7 @@ static int GetSpeed( int i ) {
     return GetSpeedParam( i, step, coefA, coefB, coefC );
 }
 
-static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int level,  int scoreCompare ) {
+static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int level, int scoreCompare ) {
     bool_t keepPlaying = pls->active;
 
     if ( pls->active ) {
@@ -824,7 +839,15 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int le
     DrawStripes( boffset );
 
     if ( pls->active || pls->score > 0 ) {
-        DrawBitmapOff( boffset, c2FixedToInt( pls->currentPos ), GetCurrentBitmap( pls ), x_shapeSize, colWhite );
+        c2_t shapePos = c2FixedToInt( pls->currentPos );
+        const char *shape = GetCurrentBitmap( pls );
+        if ( ! VAR_Num( x_skipGhostShape ) ) {
+            c2_t proj;
+            if ( TraceDownOnBoard( pls->board, shapePos, shape, &proj ) ) {
+                DrawBitmapOff( boffset, proj, shape, x_shapeSize, colorrgba( 0.8, 0.8, 0.8, 0.3 + 0.1 * sin( SYS_RealTime() * 0.01 ) ) );
+            }
+        }
+        DrawBitmapOff( boffset, shapePos, shape, x_shapeSize, colWhite );
         DrawBitmap( boffset, pls->board, x_boardSize, colWhite );
         PrintInGrid( boffset, x_boardSize.x + 1, 1, "NEXT", colCyan );
         shape_t *nextShape = &x_shapes[pls->nextShape];
@@ -963,6 +986,7 @@ static void RegisterVars( void ) {
     x_musicVolume = VAR_Register( "musicVolume", "1" );
     x_numLinesPerLevel = VAR_Register( "numLinesPerLevel", "10" );
     x_skipBoards = VAR_Register( "skipBoards", "0" );
+    x_skipGhostShape = VAR_Register( "skipGhostShape", "0" );
     x_showSpeedFunc = VAR_Register( "showSpeedFunc", "0" );
     x_speedFuncMax = VAR_Register( "speedFuncMax", "0.75" );
     x_speedCoefA = VAR_Register( "speedCoefA", "400" );
