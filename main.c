@@ -3,8 +3,10 @@
 /*
 
 TODO
+Fix joystick locks and other crap on windows
+Don't get the grids too separated on wide screens
+Show where the figure will fall as silhouette
 Set controller dead zone from app, store var in app.
-Any key/button handler exposed from events.c
 Controller support.
     * rotate with any up axis
     * rotate with any button
@@ -23,6 +25,7 @@ DONE
 Wed Nov 22 19:30:30 EET 2017
 
 * Draw vertical lines 
+* Any key/button handler exposed from events.c
 
 . Level number
 * Split screen.
@@ -264,6 +267,7 @@ static var_t *x_speedFuncMax;
 static var_t *x_speedCoefA;
 static var_t *x_speedCoefB;
 static var_t *x_speedCoefC;
+static var_t *x_startVSGameOnButton;
 static int x_prevTime;
 
 typedef enum {
@@ -441,13 +445,21 @@ static bool_t IsControllerTaken( int type, int id ) {
 
 static bool_t OnAnyButton_f( int code, bool_t down ) {
     if ( down && code ) {
-        int type = I_IsJoystickCode( code ) ? 'j' : 'k';
-        int id = '0' + I_DeviceOfCode( code );
-        playerSeat_t *pls = GetFreeSeat( type, id );
-        if ( pls ) {
-            if ( ! IsControllerTaken( type, id ) ) {
-                StartNewGame( pls, type, id );
-                return true;
+        if ( VAR_Num( x_startVSGameOnButton ) ) {
+            if ( ! AnySeatActive() ) {
+                for ( int i = 0; i < 2; i++ ) {
+                    StartNewGame( &x_pls[i], i == 0 ? 'k' : 'j', '0' );
+                }
+            }
+        } else {
+            int type = I_IsJoystickCode( code ) ? 'j' : 'k';
+            int id = '0' + I_DeviceOfCode( code );
+            playerSeat_t *pls = GetFreeSeat( type, id );
+            if ( pls ) {
+                if ( ! IsControllerTaken( type, id ) ) {
+                    StartNewGame( pls, type, id );
+                    return true;
+                }
             }
         }
     }
@@ -456,9 +468,6 @@ static bool_t OnAnyButton_f( int code, bool_t down ) {
 
 static void Deactivate( playerSeat_t *pls ) {
     pls->active = false;
-    if ( ! AnySeatActive() ) {
-        Mix_HaltMusic();
-    }
 }
 
 static void Init( void ) {
@@ -685,10 +694,11 @@ static bool_t TryMoveDown( playerSeat_t *pls, int deltaTime ) {
     c2_t nextPos = c2xy( pls->currentPos.x, pls->currentPos.y + speed );
     bool_t result = TryMove( pls, nextPos );
     if ( ! result ) {
-        // on faster speeds stuff gets dropped above
-        do {
+        nextPos.y &= ~255;
+        while ( ! TryMove( pls, nextPos ) ) {
             nextPos.y -= 256;
-        } while ( ! TryMove( pls, nextPos ) );
+        }
+        pls->currentPos.y += 255;
     }
     return result;
 }
@@ -921,6 +931,7 @@ static void RegisterVars( void ) {
     x_speedCoefA = VAR_Register( "speedCoefA", "400" );
     x_speedCoefB = VAR_Register( "speedCoefB", "50" );
     x_speedCoefC = VAR_Register( "speedCoefC", "40" );
+    x_startVSGameOnButton = VAR_Register( "startVSGameOnButton", "0" );
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
@@ -1023,15 +1034,16 @@ static void UpdateAllSeats( int time, int deltaTime ) {
     }
     bool_t p0finished = ! UpdateSeat( c2xy( 0, 0 ), &x_pls[0], deltaTime, p0Leads );
     bool_t p1finished = ! UpdateSeat( c2xy( tileScreen.x - SEAT_WIDTH, 0 ), &x_pls[1], deltaTime, p1Leads );
-    if ( p0finished && p1finished ) {
-        if ( AnySeatActive() ) {
-            for ( int i = 0; i < 2; i++ ) {
-                playerSeat_t *p = &x_pls[i];
-                if ( p->active ) {
-                    p->matchEndTime = time;
-                }
+    if ( AnySeatActive() && p0finished && p1finished ) {
+        for ( int i = 0; i < 2; i++ ) {
+            playerSeat_t *p = &x_pls[i];
+            if ( p->active ) {
+                p->matchEndTime = time;
                 Deactivate( p );
             }
+        }
+        if ( ! AnySeatActive() ) {
+            Mix_HaltMusic();
         }
     }
 }
