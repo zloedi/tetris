@@ -15,19 +15,12 @@ Controller support.
 
 IN PROGRESS
 
-Rotate even at edges of board
-    rotClipMod 
-        reset on horizontal button
-        use it to move when rotating
-
-    if the shape cannot be rotated:
-        check move to the left
-        check move to the right
 
 DONE
 
 Fri Nov 24 10:48:46 EET 2017
 
+* Rotate even at edges of board
 * Show where the figure will fall as silhouette
 * The lines counter should be common to both and 20 in a VS game
 . Points gained i.e. (+100)
@@ -283,6 +276,7 @@ static var_t *x_speedCoefB;
 static var_t *x_speedCoefC;
 static var_t *x_startVSGameOnButton;
 static var_t *x_joystickDeadZone;
+static var_t *x_nextShape;
 static int x_prevTime;
 
 typedef enum {
@@ -356,7 +350,8 @@ static void DrawTileInGrid( c2_t gridCoord, int index, color_t color ) {
 }
 
 static int GetRandomShape( void ) {
-    return COM_Rand() % x_numShapes;
+    int ns = VAR_Num( x_nextShape );
+    return ( ns == 0 ? COM_Rand() : ns ) % x_numShapes;
 }
 
 static c2_t c2IntToFixed( c2_t c ) {
@@ -696,8 +691,8 @@ static bool_t IsBitmapClipping( const char *board, c2_t posOnBoard, const char *
     return false;
 }
 
-static bool_t TraceDownOnBoard( const char *board, c2_t origin, const char *bmp, c2_t *outResult ) {
-    for ( c2_t res = origin; res.y < x_boardSize.y - 1; res.y++ ) {
+static bool_t TraceDownOnBoard( const char *board, c2_t originOnBoard, const char *bmp, c2_t *outResult ) {
+    for ( c2_t res = originOnBoard; res.y < x_boardSize.y - 1; res.y++ ) {
         if ( IsBitmapClipping( board, c2xy( res.x, res.y + 1 ), bmp ) ) {
             *outResult = res;
             return true;
@@ -705,6 +700,37 @@ static bool_t TraceDownOnBoard( const char *board, c2_t origin, const char *bmp,
     }
     return false;
 }
+
+static int EvalDrop( playerSeat_t *pls, c2_t posOnBoard, const char *bitmap ) {
+    int score = 0;
+    c2_t proj;
+    if ( TraceDownOnBoard( pls->board, posOnBoard, bitmap, &proj ) ) {
+        for ( int y = 0; y < x_shapeSize.y; y++ ) {
+            for ( int x = 0; x < x_shapeSize.x; x++ ) {
+                c2_t p[4] = {
+                    { .x = x - 1, .y = y },
+                    { .x = x + 1, .y = y },
+                    { .x = x, .y = y + 1 },
+                    { .x = x, .y = y - 1 },
+                };
+                if ( ! IsBlank( ReadTile( c2xy( x, y ), bitmap, x_shapeSize ) ) ) {
+                    for ( int i = 0; i < 4; i++ ) {
+                        c2_t pb = c2Add( p[i], proj );
+                        score += ! IsBlank( ReadTileOnBoard( pls->board, pb ) );
+                    }
+                }
+            }
+        }
+    }
+    return score;
+}
+
+//static const char* BestCPUInput( playerSeat_t *pls ) {
+//    //c2_t pos = c2FixedToInt( pls->currentPos )
+//    //for ( pos.x = -2; pos.x <= x_boardSize.x + 1; pos.x++ ) {
+//    //}
+//    return "";
+//}
 
 static const char* GetCurrentBitmap( playerSeat_t *pls ) {
     shape_t *curShape = &x_shapes[pls->currentShape];
@@ -715,14 +741,11 @@ static bool_t IsCurrentBitmapClipping( playerSeat_t *pls, c2_t fixedPointPos ) {
     return IsBitmapClipping( pls->board, c2FixedToInt( fixedPointPos ), GetCurrentBitmap( pls ) );
 }
 
-static bool_t TryMove( playerSeat_t *pls, c2_t nextPos ) {
-    if ( nextPos.x != pls->currentPos.x ) {
-        pls->rotateClip = 0;
-    }
-    if ( IsCurrentBitmapClipping( pls, nextPos ) ) {
+static bool_t TryMove( playerSeat_t *pls, c2_t nextPosFP ) {
+    if ( IsCurrentBitmapClipping( pls, nextPosFP ) ) {
         return false;
     }
-    pls->currentPos = nextPos;
+    pls->currentPos = nextPosFP;
     return true;
 }
 
@@ -785,14 +808,27 @@ static void EraseFilledLines( playerSeat_t *pls ) {
     }
 }
 
-static void TryMoveHorz( playerSeat_t *pls, int deltaTime ) {
+static void TryMoveSide( playerSeat_t *pls, int nextFPX ) {
+    c2_t nextPos = c2xy( nextFPX, pls->currentPos.y );
+    if ( TryMove( pls, nextPos ) ) {
+        //PrintBlank();
+        //PrintBlank();
+        //PrintBlank();
+        //PrintBlank();
+        //PrintBlank();
+        //PrintBlank();
+        //PrintInt( EvalDrop( pls, c2FixedToInt( pls->currentPos ), GetCurrentBitmap( pls ) ) );
+        pls->rotateClip = 0;
+    }
+}
+
+static void TryMoveSideTime( playerSeat_t *pls, int deltaTime ) {
     int dir = ( pls->butMoveRight == BS_PRESSED ) 
             - ( pls->butMoveLeft == BS_PRESSED );
     if ( dir != 0 ) {
         int speed = GetHoldSpeed( true, 40, deltaTime ) / 2;
         int off = dir > 0 ? speed : -speed;
-        c2_t nextPos = c2xy( pls->currentPos.x + off, pls->currentPos.y );
-        TryMove( pls, nextPos );
+        TryMoveSide( pls, pls->currentPos.x + off );
     }
 }
 
@@ -836,7 +872,7 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int le
 
     if ( pls->active ) {
         pls->speed = GetSpeed( level );
-        TryMoveHorz( pls, deltaTime );
+        TryMoveSideTime( pls, deltaTime );
         if ( ! TryMoveDown( pls, deltaTime ) ) {
             keepPlaying = Drop( pls );
             if ( keepPlaying ) {
@@ -936,25 +972,15 @@ static bool_t DoButton( bool_t down, butState_t *button ) {
 //    return false;
 //}
 
-static void TryMoveRight( playerSeat_t *pls ) {
-    c2_t nextPos = c2xy( ( pls->currentPos.x & ~255 ) + 256, pls->currentPos.y );
-    TryMove( pls, nextPos );
-}
-
-static void TryMoveLeft( playerSeat_t *pls ) {
-    c2_t nextPos = c2xy( ( pls->currentPos.x & ~255 ), pls->currentPos.y );
-    TryMove( pls, nextPos );
-}
-
 static void DoRightButton( playerSeat_t *pls, bool_t down ) {
     if ( DoButton( down, &pls->butMoveRight ) ) {
-        TryMoveRight( pls );
+        TryMoveSide( pls, ( pls->currentPos.x & ~255 ) + 256 );
     }
 }
 
 static void DoLeftButton( playerSeat_t *pls, bool_t down ) {
     if ( DoButton( down, &pls->butMoveLeft ) ) {
-        TryMoveLeft( pls );
+        TryMoveSide( pls, pls->currentPos.x & ~255 );
     }
 }
 
@@ -970,6 +996,30 @@ static void HorzAxis_f( void ) {
     int as = CMD_ArgvAxisSign();
     DoRightButton( ArgvSeat(), as > 0 );
     DoLeftButton( ArgvSeat(), as < 0 );
+}
+
+static bool_t RotateShape( const char *board, c2_t origin, int shape, 
+                            int bitmap, int *outNextBitmap, int *outRotateClip ) {
+    shape_t *shp = &x_shapes[shape];
+    int next = ( bitmap + 1 ) % shp->numBitmaps;
+    const char *bmp = shp->bitmaps[next];
+    bool_t clip = IsBitmapClipping( board, origin, bmp );
+    if ( clip ) {
+        for ( int dir = -1; dir <= 1; dir += 2 ) {
+            for ( int i = 1; i <= 2; i++ ) {
+                int clipAmount = i * dir;
+                c2_t c = c2xy( origin.x + clipAmount, origin.y );
+                clip = IsBitmapClipping( board, c, bmp );
+                if ( ! clip ) {
+                    *outRotateClip = clipAmount;
+                    break;
+                }
+            }
+        }
+    } else {
+        *outNextBitmap = next;
+    }
+    return ! clip;
 }
 
 static void Rotate( playerSeat_t *pls ) {
@@ -1021,6 +1071,7 @@ static void RegisterVars( void ) {
     x_speedCoefC = VAR_Register( "speedCoefC", "40" );
     x_startVSGameOnButton = VAR_Register( "startVSGameOnButton", "0" );
     x_joystickDeadZone = VAR_Register( "joystickDeadZone", "0.9" );
+    x_nextShape = VAR_Register( "nextShape", "0" );
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
