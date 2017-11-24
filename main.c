@@ -3,6 +3,7 @@
 /*
 
 TODO
+Rotate even at edges of board
 Fix joystick locks and other crap on windows
 Don't get the grids too separated on wide screens
 Show where the figure will fall as silhouette
@@ -268,6 +269,7 @@ static var_t *x_speedCoefA;
 static var_t *x_speedCoefB;
 static var_t *x_speedCoefC;
 static var_t *x_startVSGameOnButton;
+static var_t *x_joystickDeadZone;
 static int x_prevTime;
 
 typedef enum {
@@ -443,6 +445,20 @@ static bool_t IsControllerTaken( int type, int id ) {
     return false;
 }
 
+static void Deactivate( playerSeat_t *pls ) {
+    pls->active = false;
+}
+
+static void Restart_f( void ) {
+    for ( int i = 0; i < 2; i++ ) {
+        playerSeat_t *pls = &x_pls[i];
+        if ( pls->active ) {
+            Deactivate( pls );
+            StartNewGame( pls, pls->deviceType, pls->deviceId );
+        }
+    }
+}
+
 static bool_t OnAnyButton_f( int code, bool_t down ) {
     if ( down && code ) {
         if ( VAR_Num( x_startVSGameOnButton ) ) {
@@ -466,13 +482,10 @@ static bool_t OnAnyButton_f( int code, bool_t down ) {
     return false;
 }
 
-static void Deactivate( playerSeat_t *pls ) {
-    pls->active = false;
-}
-
 static void Init( void ) {
     R_SetClearColor( colorrgb( 0.1, 0.1, 0.1 ) );
     E_SetButtonOverride( OnAnyButton_f );
+    I_SetJoystickDeadZone( VAR_Num( x_joystickDeadZone ) * I_AXIS_MAX_VALUE );
     x_music = Mix_LoadMUS( GetAssetPath( "ievan_polkka_8bit.ogg" ) );
     x_soundPop = Mix_LoadWAV( GetAssetPath( "pop.ogg" ) );
     x_soundThud = Mix_LoadWAV( GetAssetPath( "thud.ogg" ) );
@@ -686,7 +699,8 @@ static bool_t TryMove( playerSeat_t *pls, c2_t nextPos ) {
 }
 
 static int GetHoldSpeed( bool_t butDown, int baseSpeed, int deltaTime ) {
-    return deltaTime * baseSpeed * ( 1 + butDown * 6 ) / 100;
+    int v = Mini( baseSpeed * ( 1 + butDown * 6 ), 1000 );
+    return deltaTime * v / 100;
 }
 
 static bool_t TryMoveDown( playerSeat_t *pls, int deltaTime ) {
@@ -932,11 +946,13 @@ static void RegisterVars( void ) {
     x_speedCoefB = VAR_Register( "speedCoefB", "50" );
     x_speedCoefC = VAR_Register( "speedCoefC", "40" );
     x_startVSGameOnButton = VAR_Register( "startVSGameOnButton", "0" );
+    x_joystickDeadZone = VAR_Register( "joystickDeadZone", "0.9" );
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
     CMD_Register( "rotate", Rotate_f );
     CMD_Register( "horizontalMove", HorzAxis_f );
+    CMD_Register( "restart", Restart_f );
     I_Bind( "Left", "moveLeft" );
     I_Bind( "Right", "moveRight" );
     I_Bind( "Down", "moveDown" );
