@@ -7,7 +7,6 @@ Rotate even at edges of board
 Fix joystick locks and other crap on windows
 Don't get the grids too separated on wide screens
 Show where the figure will fall as silhouette
-Set controller dead zone from app, store var in app.
 Controller support.
     * rotate with any up axis
     * rotate with any button
@@ -22,6 +21,9 @@ The lines counter should be common to both and 20 in a VS game
 IN PROGRESS
 
 DONE
+
+Fri Nov 24 10:48:46 EET 2017
+* Set controller dead zone from app, store var in app.
 
 Wed Nov 22 19:30:30 EET 2017
 
@@ -783,10 +785,31 @@ static void DrawStripes( c2_t offset ) {
     }
 }
 
-static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int scoreCompare ) {
+static inline int Square8bitFP( int x, int scale ) {
+    return ( ( x * x * scale ) >> 8 ) >> 8;
+}
+
+static int GetSpeedParam( int i, int fpStep, int coefA, int coefB, int coefC ) {
+    int x = i * fpStep;
+    int y = Square8bitFP( x, coefA );
+    y += ( coefB * x ) >> 8;
+    y += coefC;
+    return y;
+}
+
+static int GetSpeed( int i ) {
+    int step = 256 * VAR_Num( x_speedFuncMax ) / 10;
+    int coefA = VAR_Num( x_speedCoefA );
+    int coefB = VAR_Num( x_speedCoefB );
+    int coefC = VAR_Num( x_speedCoefC );
+    return GetSpeedParam( i, step, coefA, coefB, coefC );
+}
+
+static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int level,  int scoreCompare ) {
     bool_t keepPlaying = pls->active;
 
     if ( pls->active ) {
+        pls->speed = GetSpeed( level );
         TryMoveHorz( pls, deltaTime );
         if ( ! TryMoveDown( pls, deltaTime ) ) {
             keepPlaying = Drop( pls );
@@ -969,26 +992,6 @@ static void RegisterVars( void ) {
     }
 }
 
-static inline int Square8bitFP( int x, int scale ) {
-    return ( ( x * x * scale ) >> 8 ) >> 8;
-}
-
-static int GetSpeedParam( int i, int fpStep, int coefA, int coefB, int coefC ) {
-    int x = i * fpStep;
-    int y = Square8bitFP( x, coefA );
-    y += ( coefB * x ) >> 8;
-    y += coefC;
-    return y;
-}
-
-static int GetSpeed( int i ) {
-    int step = 256 * VAR_Num( x_speedFuncMax ) / 10;
-    int coefA = VAR_Num( x_speedCoefA );
-    int coefB = VAR_Num( x_speedCoefB );
-    int coefC = VAR_Num( x_speedCoefC );
-    return GetSpeedParam( i, step, coefA, coefB, coefC );
-}
-
 static void DrawSpeedFunc( float showVal ) {
     R_ColorC( colWhite );
     v2_t start = v2xy( 0, R_GetWindowSize().y );
@@ -1019,12 +1022,7 @@ static void DrawSpeedFunc( float showVal ) {
     }
 }
 
-static void UpdateAllSeats( int time, int deltaTime ) {
-    v2_t ws = R_GetWindowSize();
-    int szx = Maxi( ws.x / ( x_tileSize.x * SEAT_WIDTH * 2 ), 1 );
-    int szy = Maxi( ws.y / ( x_tileSize.y * SEAT_HEIGHT ), 1 );
-    x_pixelSize = Mini( szx, szy );
-    c2_t tileScreen = c2Divs( c2Div( c2v2( ws ), x_tileSize ), x_pixelSize );
+static int GetTotalErasedLines( void ) {
     int numErasedLines = 0;
     for ( int i = 0; i < 2; i++ ) {
         playerSeat_t *p = &x_pls[i];
@@ -1032,25 +1030,33 @@ static void UpdateAllSeats( int time, int deltaTime ) {
             numErasedLines += p->numErasedLines;
         }
     }
-    int level = numErasedLines / VAR_Num( x_numLinesPerLevel );
-    for ( int i = 0; i < 2; i++ ) {
-        playerSeat_t *p = &x_pls[i];
-        if ( p->active ) {
-            p->speed = GetSpeed( level );
+    return numErasedLines;
+}
+
+static bool_t IsVSGame( void ) {
+    return AllSeatsActive() || ( x_pls[0].matchEndTime > 0 && x_pls[0].matchEndTime == x_pls[1].matchEndTime );
+}
+
+static void UpdateAllSeats( int time, int deltaTime ) {
+    v2_t ws = R_GetWindowSize();
+    int szx = Maxi( ws.x / ( x_tileSize.x * SEAT_WIDTH * 2 ), 1 );
+    int szy = Maxi( ws.y / ( x_tileSize.y * SEAT_HEIGHT ), 1 );
+    x_pixelSize = Mini( szx, szy );
+    c2_t tileScreen = c2Divs( c2Div( c2v2( ws ), x_tileSize ), x_pixelSize );
+    int scoreLead = 0;
+    if ( IsVSGame() ) {
+        if ( x_pls[0].score > x_pls[1].score ) {
+            scoreLead = 1;
+        } else if ( x_pls[0].score < x_pls[1].score ) {
+            scoreLead = -1;
         }
     }
-    bool_t vsGame = AllSeatsActive() || ( x_pls[0].matchEndTime > 0 && x_pls[0].matchEndTime == x_pls[1].matchEndTime );
-    int p0Leads = 0;
-    int p1Leads = 0;
-    if ( vsGame ) {
-        if ( x_pls[0].score != x_pls[1].score ) {
-            p0Leads = x_pls[0].score > x_pls[1].score ? 1 : -1;
-            p1Leads = x_pls[1].score > x_pls[0].score ? 1 : -1;
-        }
-    }
-    bool_t p0finished = ! UpdateSeat( c2xy( 0, 0 ), &x_pls[0], deltaTime, p0Leads );
-    bool_t p1finished = ! UpdateSeat( c2xy( tileScreen.x - SEAT_WIDTH, 0 ), &x_pls[1], deltaTime, p1Leads );
-    if ( AnySeatActive() && p0finished && p1finished ) {
+    int level = GetTotalErasedLines() / VAR_Num( x_numLinesPerLevel );
+    int gap = tileScreen.x - SEAT_WIDTH * 2; 
+    int keepPlaying = 0;
+    keepPlaying += UpdateSeat( c2xy( gap / 3, 0 ), &x_pls[0], deltaTime, level, scoreLead );
+    keepPlaying += UpdateSeat( c2xy( tileScreen.x - SEAT_WIDTH - gap / 3, 0 ), &x_pls[1], deltaTime, level, -scoreLead );
+    if ( AnySeatActive() && ! keepPlaying ) {
         for ( int i = 0; i < 2; i++ ) {
             playerSeat_t *p = &x_pls[i];
             if ( p->active ) {
