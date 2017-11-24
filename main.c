@@ -3,7 +3,6 @@
 /*
 
 TODO
-Rotate even at edges of board
 Fix joystick locks and other crap on windows
 No dead zone in input code, handle it in app
 Controller support.
@@ -16,12 +15,20 @@ Controller support.
 
 IN PROGRESS
 
-Show where the figure will fall as silhouette
+Rotate even at edges of board
+    rotClipMod 
+        reset on horizontal button
+        use it to move when rotating
+
+    if the shape cannot be rotated:
+        check move to the left
+        check move to the right
 
 DONE
 
 Fri Nov 24 10:48:46 EET 2017
 
+* Show where the figure will fall as silhouette
 * The lines counter should be common to both and 20 in a VS game
 . Points gained i.e. (+100)
 * Don't get the grids too separated on wide screens
@@ -294,6 +301,7 @@ typedef struct {
     int currentBitmap;
     c2_t currentPos;
     int speed;
+    int rotateClip;
     butState_t butMoveDown;
     butState_t butMoveLeft;
     butState_t butMoveRight;
@@ -708,6 +716,9 @@ static bool_t IsCurrentBitmapClipping( playerSeat_t *pls, c2_t fixedPointPos ) {
 }
 
 static bool_t TryMove( playerSeat_t *pls, c2_t nextPos ) {
+    if ( nextPos.x != pls->currentPos.x ) {
+        pls->rotateClip = 0;
+    }
     if ( IsCurrentBitmapClipping( pls, nextPos ) ) {
         return false;
     }
@@ -963,9 +974,25 @@ static void HorzAxis_f( void ) {
 
 static void Rotate( playerSeat_t *pls ) {
     shape_t *curShape = &x_shapes[pls->currentShape];
-    int bmpIdx = ( pls->currentBitmap + 1 ) % curShape->numBitmaps;
-    if ( ! IsBitmapClipping( pls->board, c2FixedToInt( pls->currentPos ), curShape->bitmaps[bmpIdx] ) ) {
-        pls->currentBitmap = bmpIdx;
+    int nextIdx = ( pls->currentBitmap + 1 ) % curShape->numBitmaps;
+    const char *bitmap = curShape->bitmaps[nextIdx];
+    pls->currentPos.x -= pls->rotateClip << 8;
+    pls->rotateClip = 0;
+    c2_t origin = c2FixedToInt( pls->currentPos );
+    if ( IsBitmapClipping( pls->board, origin, bitmap ) ) {
+        for ( int dir = -1; dir <= 1; dir += 2 ) {
+            for ( int i = 1; i <= 2; i++ ) {
+                c2_t c = c2xy( origin.x + i * dir, origin.y );
+                if ( ! IsBitmapClipping( pls->board, c, bitmap ) ) {
+                    pls->rotateClip = i * dir;
+                    pls->currentPos.x = c.x << 8;
+                    pls->currentBitmap = nextIdx;
+                    break;
+                }
+            }
+        }
+    } else {
+        pls->currentBitmap = nextIdx;
     }
 }
 
