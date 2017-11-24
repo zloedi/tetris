@@ -963,7 +963,7 @@ static void RegisterVars( void ) {
     x_musicVolume = VAR_Register( "musicVolume", "1" );
     x_numLinesPerLevel = VAR_Register( "numLinesPerLevel", "10" );
     x_skipBoards = VAR_Register( "skipBoards", "0" );
-    x_showSpeedFunc = VAR_Register( "showSpeedParable", "0" );
+    x_showSpeedFunc = VAR_Register( "showSpeedFunc", "0" );
     x_speedFuncMax = VAR_Register( "speedFuncMax", "0.75" );
     x_speedCoefA = VAR_Register( "speedCoefA", "400" );
     x_speedCoefB = VAR_Register( "speedCoefB", "50" );
