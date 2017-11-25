@@ -301,6 +301,8 @@ typedef struct {
     butState_t butMoveRight;
     butState_t butRotate;
     int numErasedLines;
+    int lastScoreGainAlpha;
+    int lastScoreGain;
     int score;
 
     int cpuTimeOfNextConsume;
@@ -448,47 +450,52 @@ static bool_t TraceDownOnBoard( const char *board, c2_t originOnBoard, const cha
     return false;
 }
 
+static int EvalScore( const char *board, c2_t posOnBoard, const char *bitmap ) {
+    int score = 0;
+    for ( int y = 0; y < x_shapeSize.y; y++ ) {
+        for ( int x = 0; x < x_shapeSize.x; x++ ) {
+            c2_t p[4] = {
+                c2xy( x - 1, y ),
+                c2xy( x + 1, y ),
+                c2xy( x, y + 1 ),
+                c2xy( x, y - 1 ),
+            };
+            int yScore = ( 1 + posOnBoard.y + y ) * 10;
+            if ( ! IsBlank( ReadTile( c2xy( x, y ), bitmap, x_shapeSize ) ) ) {
+                for ( int i = 0; i < 4; i++ ) {
+                    c2_t pb = c2Add( p[i], posOnBoard );
+                    int blank = IsBlank( ReadTileOnBoard( board, pb ) );
+                    score += yScore * ! blank;
+                }
+            }
+        }
+    }
+    return score;
+}
+
 static int EvalDrop( playerSeat_t *pls, c2_t posOnBoard, const char *bitmap ) {
     int score = 0;
     c2_t proj;
     if ( TraceDownOnBoard( pls->board, posOnBoard, bitmap, &proj ) ) {
-        for ( int y = 0; y < x_shapeSize.y; y++ ) {
-            for ( int x = 0; x < x_shapeSize.x; x++ ) {
-                //int mulBlank[4] = {
-                //    2, 
-                //    2,
-                //    0,
-                //    1,
-                //};
-                int mul[4] = {
-                    1, 
-                    1,
-                    1,
-                    1,
-                };
-                c2_t p[4] = {
-                    { .x = x - 1, .y = y },
-                    { .x = x + 1, .y = y },
-                    { .x = x, .y = y + 1 },
-                    { .x = x, .y = y - 1 },
-                };
-                int yScore = ( 1 + proj.y + y ) * 10;
-                if ( ! IsBlank( ReadTile( c2xy( x, y ), bitmap, x_shapeSize ) ) ) {
-                    for ( int i = 0; i < 4; i++ ) {
-                        c2_t pb = c2Add( p[i], proj );
-                        int blank = IsBlank( ReadTileOnBoard( pls->board, pb ) );
-                        score += yScore * mul[i] * ! blank;
-                        //if ( blank && i == 2 ) {
-                        //    //score = 0;
-                        //    return 1;
-                        //    //s = 0;
-                        //}
-                        ////score += s;
-                    }
-                }
-            }
-        }
-        //return 2;
+        score = EvalScore( pls->board, proj, bitmap );
+        //for ( int y = 0; y < x_shapeSize.y; y++ ) {
+        //    for ( int x = 0; x < x_shapeSize.x; x++ ) {
+        //        c2_t p[4] = {
+        //            c2xy( x - 1, y ),
+        //            c2xy( x + 1, y ),
+        //            c2xy( x, y + 1 ),
+        //            c2xy( x, y - 1 ),
+        //        };
+        //        int yScore = ( 1 + proj.y + y ) * 10;
+        //        if ( ! IsBlank( ReadTile( c2xy( x, y ), bitmap, x_shapeSize ) ) ) {
+        //            for ( int i = 0; i < 4; i++ ) {
+        //                c2_t pb = c2Add( p[i], proj );
+        //                int blank = IsBlank( ReadTileOnBoard( pls->board, pb ) );
+        //                score += yScore * ! blank;
+        //            }
+        //        }
+        //    }
+        //}
     }
     return score;
 }
@@ -541,7 +548,6 @@ void CPUEvaluate( playerSeat_t *pls ) {
             }
         }
     }
-    //PrintInt( maxScore );
     if ( maxScore > 0 ) {
         int d = bestDrop.x - origin.x;
         int numMoves = abs( d );
@@ -866,20 +872,20 @@ static bool_t TryMoveDown( playerSeat_t *pls, int deltaTime ) {
     return result;
 }
 
-static bool_t Drop( playerSeat_t *pls ) {
+static bool_t Drop( playerSeat_t *pls, int *outDropScore ) {
     c2_t pos = c2FixedToInt( pls->currentPos );
     const char *bitmap = GetCurrentBitmap( pls );
     if ( IsBitmapPartiallyOff( pls->board, pos, bitmap ) ) {
         return false;
     }
+    *outDropScore = EvalScore( pls->board, pos, bitmap );
     CopyBitmap( bitmap, x_shapeSize, pls->board, x_boardSize, pos );
     Mix_PlayChannel( -1, x_soundThud, 0 );
-    pls->score += pls->speed / 2;
     return true;
 }
 
-static void EraseFilledLines( playerSeat_t *pls ) {
-    int bonus = 1;
+static void EraseFilledLines( playerSeat_t *pls, int *outLinesScore ) {
+    int bonus = 50;
     bool_t result = false;
     for ( int y = x_boardSize.y - 2; y >= 1; ) {
         int numBlanks = x_boardSize.x - 2;
@@ -901,7 +907,7 @@ static void EraseFilledLines( playerSeat_t *pls ) {
         }
     }
     if ( result ) {
-        pls->score += bonus * pls->speed * 4;
+        *outLinesScore = bonus * 100;
         Mix_PlayChannel( -1, x_soundPop, 0 );
     }
 }
@@ -909,13 +915,6 @@ static void EraseFilledLines( playerSeat_t *pls ) {
 static void TryMoveSide( playerSeat_t *pls, int nextFPX ) {
     c2_t nextPos = c2xy( nextFPX, pls->currentPos.y );
     if ( TryMove( pls, nextPos ) ) {
-        //PrintBlank();
-        //PrintBlank();
-        //PrintBlank();
-        //PrintBlank();
-        //PrintBlank();
-        //PrintBlank();
-        //PrintInt( EvalDrop( pls, c2FixedToInt( pls->currentPos ), GetCurrentBitmap( pls ) ) );
         pls->rotateClip = 0;
     }
 }
@@ -972,11 +971,18 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int le
         pls->speed = GetSpeed( level );
         TryMoveSideTime( pls, deltaTime );
         if ( ! TryMoveDown( pls, deltaTime ) ) {
-            keepPlaying = Drop( pls );
+            int dropScore = 0;
+            int linesScore = 0;
+            keepPlaying = Drop( pls, &dropScore );
             if ( keepPlaying ) {
-                EraseFilledLines( pls );
+                EraseFilledLines( pls, &linesScore );
                 PickShapeAndReset( pls, doCPU );
                 LatchButtons( pls );
+            }
+            pls->lastScoreGain = dropScore + linesScore;
+            if ( pls->lastScoreGain > 0 ) {
+                pls->lastScoreGainAlpha = 256;
+                pls->score += pls->lastScoreGain;
             }
         }
     }
@@ -1010,13 +1016,16 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int le
         }
         PrintInGrid( boffset, x_boardSize.x + 1, 7, "SCORE", colCyan );
         PrintInGrid( boffset, x_boardSize.x + 1, 8, va( "%d", pls->score ), scoreCol );
-        PrintInGrid( boffset, x_boardSize.x + 1, 10, "HISCORE", colCyan );
-        PrintInGrid( boffset, x_boardSize.x + 1, 11, va( "%d", ( int )VAR_Num( x_hiscore ) ), hiscoreCol );
-        PrintInGrid( boffset, x_boardSize.x + 1, 13, "LINES", colCyan );
-        PrintInGrid( boffset, x_boardSize.x + 1, 14, va( "%d", pls->numErasedLines ), colWhite );
+        pls->lastScoreGainAlpha -= deltaTime / 4;
+        float alpha = Maxi( pls->lastScoreGainAlpha, 0 ) / 256.0f;
+        PrintInGrid( boffset, x_boardSize.x + 1, 9, va( "%d", pls->lastScoreGain ), colorrgba( colOrange.r, colOrange.g, colOrange.b, alpha ) );
+        PrintInGrid( boffset, x_boardSize.x + 1, 11, "HISCORE", colCyan );
+        PrintInGrid( boffset, x_boardSize.x + 1, 12, va( "%d", ( int )VAR_Num( x_hiscore ) ), hiscoreCol );
+        PrintInGrid( boffset, x_boardSize.x + 1, 14, "LINES", colCyan );
+        PrintInGrid( boffset, x_boardSize.x + 1, 15, va( "%d", pls->numErasedLines ), colWhite );
         if ( pls->speed > InitialSpeed() ) {
-            PrintInGrid( boffset, x_boardSize.x + 1, 16, "SPEED", colCyan );
-            PrintInGrid( boffset, x_boardSize.x + 1, 17, va( "x%.2f", pls->speed / ( float )InitialSpeed() ), colWhite );
+            PrintInGrid( boffset, x_boardSize.x + 1, 17, "SPEED", colCyan );
+            PrintInGrid( boffset, x_boardSize.x + 1, 18, va( "x%.2f", pls->speed / ( float )InitialSpeed() ), colWhite );
         }
     } else {
         DrawBitmap( boffset, pls->board, x_boardSize, colWhite );
@@ -1096,47 +1105,7 @@ static void HorzAxis_f( void ) {
     DoLeftButton( ArgvSeat(), as < 0 );
 }
 
-//static bool_t RotateShape( const char *board, c2_t posOnBoard, int shape, 
-//                            int bitmap, int *outNextBitmap, int *clipAmount ) {
-//    shape_t *shp = &x_shapes[shape];
-//    int next = ( bitmap + 1 ) % shp->numBitmaps;
-//    *outNextBitmap = next;
-//    *clipAmount = 0;
-//    const char *bmp = shp->bitmaps[next];
-//    bool_t isClipping = IsBitmapClipping( board, posOnBoard, bmp );
-//    if ( isClipping ) {
-//        for ( int dir = -1; dir <= 1; dir += 2 ) {
-//            for ( int i = 1; i <= 2; i++ ) {
-//                int ca = i * dir;
-//                isClipping = IsBitmapClipping( board, 
-//                            c2xy( posOnBoard.x + ca, posOnBoard.y ), bmp );
-//                if ( ! isClipping ) {
-//                    *outNextBitmap = next;
-//                    *clipAmount = ca;
-//                    break;
-//                }
-//            }
-//        }
-//    }
-//    return ! isClipping;
-//}
-
 static void Rotate( playerSeat_t *pls ) {
-//    pls->currentPos.x -= pls->rotateClip << 8;
-//    pls->rotateClip = 0;
-//    int nextBitmap;
-//    int clip;
-//    c2_t origin = c2FixedToInt( pls->currentPos );
-//    if ( RotateShape( pls->board, origin, 
-//                        pls->currentShape, pls->currentBitmap, 
-//                        &nextBitmap, &clip ) ) {
-//        PrintC2( origin );
-//        PrintInt( clip );
-//        pls->rotateClip = clip;
-//        pls->currentPos.x = ( origin.x + clip ) << 8;
-//        pls->currentBitmap = nextBitmap;
-//    }
-
     shape_t *curShape = &x_shapes[pls->currentShape];
     int nextIdx = ( pls->currentBitmap + 1 ) % curShape->numBitmaps;
     const char *bitmap = curShape->bitmaps[nextIdx];
