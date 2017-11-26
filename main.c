@@ -3,6 +3,9 @@
 /*
 
 TODO
+Less bass on drop
+Do icon
+Glitchy hat switch on xbox controller
 Fix joystick locks and other crap on windows
 Controller support.
     * rotate with any up axis
@@ -611,6 +614,7 @@ static bool_t AnySeatActive( void ) {
 
 static void UpdateMusicPlayback( void ) {
     if ( IsDemo() ) {
+        PrintBool( IsDemo() );
         Mix_HaltMusic();
     } else if ( ! AnySeatActive() ) {
         Mix_FadeOutMusic( 300 );
@@ -660,6 +664,7 @@ static void CPUUpdate( playerSeat_t *pls, int deltaTime ) {
     pls->cpuIdleTime += deltaTime;
     if ( pls->cpuIdleTime > 4000 ) {
         CPUEvaluate( pls );
+        UpdateMusicPlayback();
     }
     if ( pls->cpuCommands ) {
         int delay = 60000 / CPUGetAPM();
