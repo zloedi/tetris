@@ -4,7 +4,6 @@
 
 TODO
 Fix joystick locks and other crap on windows
-No dead zone in input code, handle it in app
 Controller support.
     * rotate with any up axis
     * rotate with any button
@@ -12,14 +11,18 @@ Controller support.
     * move horizontal any horizontal axis
     * move using the hat switch
     hotplug and controllers.
+More than 2 players
+Wait a bit after game over
 
 IN PROGRESS
 
+Wake up cpu earlier when start playing
 
 DONE
 
 Fri Nov 24 10:48:46 EET 2017
 
+* No dead zone in input code, handle it in app
 * Rotate even at edges of board
 * Show where the figure will fall as silhouette
 * The lines counter should be common to both and 20 in a VS game
@@ -279,6 +282,7 @@ static var_t *x_speedCoefB;
 static var_t *x_speedCoefC;
 static var_t *x_joystickDeadZone;
 static var_t *x_nextShape;
+static int x_timeSinceGameOver;
 static int x_prevTime;
 
 typedef enum {
@@ -494,24 +498,6 @@ static int EvalDrop( playerSeat_t *pls, c2_t posOnBoard, const char *bitmap ) {
     c2_t proj;
     if ( TraceDownOnBoard( pls->board, posOnBoard, bitmap, &proj ) ) {
         score = EvalScore( pls->board, proj, bitmap );
-        //for ( int y = 0; y < x_shapeSize.y; y++ ) {
-        //    for ( int x = 0; x < x_shapeSize.x; x++ ) {
-        //        c2_t p[4] = {
-        //            c2xy( x - 1, y ),
-        //            c2xy( x + 1, y ),
-        //            c2xy( x, y + 1 ),
-        //            c2xy( x, y - 1 ),
-        //        };
-        //        int yScore = ( 1 + proj.y + y ) * 10;
-        //        if ( ! IsBlank( ReadTile( c2xy( x, y ), bitmap, x_shapeSize ) ) ) {
-        //            for ( int i = 0; i < 4; i++ ) {
-        //                c2_t pb = c2Add( p[i], proj );
-        //                int blank = IsBlank( ReadTileOnBoard( pls->board, pb ) );
-        //                score += yScore * ! blank;
-        //            }
-        //        }
-        //    }
-        //}
     }
     return score;
 }
@@ -585,23 +571,6 @@ static bool_t IsCPU( playerSeat_t *pls ) {
     return pls->humanIdleTime >= TIME_TO_CPU_KICK_IN;
 }
 
-static void CPUAcquire( playerSeat_t *pls ) {
-    pls->humanIdleTime = TIME_TO_CPU_KICK_IN;
-}
-
-static void CPUHandOver( playerSeat_t *pls ) {
-    CPUClearCommands( pls );
-    UnlatchButtons( pls );
-    pls->humanIdleTime = 0;
-}
-
-static int APM( playerSeat_t *pls  ) {
-    if ( ! pls->gameDuration ) {
-        return 666;
-    }
-    return pls->numButtonActions * 60000 / pls->gameDuration;
-}
-
 static int NumCPUPlayers( void ) {
     int n = 0;
     for ( int i = 0; i < MAX_PLAYERS; i++ ) {
@@ -610,12 +579,68 @@ static int NumCPUPlayers( void ) {
     return n;
 }
 
+static int NumActiveHumanPlayers( void ) {
+    int n = 0;
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
+        n += x_pls[i].active && ! IsCPU( &x_pls[i] );
+    }
+    return n;
+}
+
+//static int NumActiveCPUPlayers( void ) {
+//    int n = 0;
+//    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
+//        n += x_pls[i].active && IsCPU( &x_pls[i] );
+//    }
+//    return n;
+//}
+
 static int NumHumanPlayers( void ) {
     return MAX_PLAYERS - NumCPUPlayers();
 }
 
 static bool_t IsDemo( void ) {
     return ! NumHumanPlayers();
+}
+
+//static bool_t AllSeatsActive( void ) {
+//    return x_pls[0].active && x_pls[1].active;
+//}
+
+static bool_t AnySeatActive( void ) {
+    return x_pls[0].active || x_pls[1].active;
+}
+
+static void UpdateMusicPlayback( void ) {
+    if ( IsDemo() ) {
+        Mix_HaltMusic();
+    } else if ( ! AnySeatActive() ) {
+        Mix_FadeOutMusic( 300 );
+    } else {
+        if ( ! Mix_PlayingMusic() ) {
+            Mix_PlayMusic( x_music, -1 );
+        }
+        Mix_VolumeMusic( Clampf( VAR_Num( x_musicVolume ), 0, 1 ) * MIX_MAX_VOLUME / 4 );
+    }
+}
+
+static void CPUAcquire( playerSeat_t *pls ) {
+    pls->humanIdleTime = TIME_TO_CPU_KICK_IN;
+    UpdateMusicPlayback();
+}
+
+static void CPUHandOver( playerSeat_t *pls ) {
+    CPUClearCommands( pls );
+    UnlatchButtons( pls );
+    pls->humanIdleTime = 0;
+    UpdateMusicPlayback();
+}
+
+static int APM( playerSeat_t *pls  ) {
+    if ( ! pls->gameDuration ) {
+        return 666;
+    }
+    return pls->numButtonActions * 60000 / pls->gameDuration;
 }
 
 static int CPUGetAPM( void ) {
@@ -678,14 +703,7 @@ static void StartNewGame( playerSeat_t *pls, int deviceType, int deviceId ) {
     pls->nextShape = GetRandomShape();
     ClearBoard( pls );
     PickShapeAndReset( pls );
-    if ( ! Mix_PlayingMusic() ) {
-        Mix_PlayMusic( x_music, -1 );
-    }
-}
-
-static void UpdateMusicVolume( void ) {
-    float vol = Clampf( VAR_Num( x_musicVolume ), 0, 1 );
-    Mix_VolumeMusic( vol * MIX_MAX_VOLUME / 4 );
+    UpdateMusicPlayback();
 }
 
 static playerSeat_t* ArgvSeat( void ) {
@@ -708,14 +726,6 @@ static playerSeat_t* GetSeat( int type, int id ) {
         }
     }
     return NULL;
-}
-
-static bool_t AllSeatsActive( void ) {
-    return x_pls[0].active && x_pls[1].active;
-}
-
-static bool_t AnySeatActive( void ) {
-    return x_pls[0].active || x_pls[1].active;
 }
 
 static playerSeat_t* GetFreeSeat( int hintType, int hintId ) {
@@ -757,22 +767,6 @@ static void Restart_f( void ) {
     }
 }
 
-//static int NumActiveHumanPlayers( void ) {
-//    int n = 0;
-//    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
-//        n += x_pls[i].active && ! IsCPU( &x_pls[i] );
-//    }
-//    return n;
-//}
-
-//static int NumActiveCPUPlayers( void ) {
-//    int n = 0;
-//    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
-//        n += x_pls[i].active && IsCPU( &x_pls[i] );
-//    }
-//    return n;
-//}
-
 static void CPUStartGame( playerSeat_t *pls, int id ) {
     // a non-existing joystick for an AI until another human picks it up
     StartNewGame( pls, 'j', id );
@@ -783,6 +777,10 @@ static void CPUStartGame( playerSeat_t *pls, int id ) {
 static bool_t OnAnyButton_f( int code, bool_t down ) {
     if ( ! code ) {
         return false;
+    }
+    // consume the input a bit after game over
+    if ( x_timeSinceGameOver < 2000 ) {
+        return true;
     }
     int type = I_IsJoystickCode( code ) ? 'j' : 'k';
     int id = '0' + I_DeviceOfCode( code );
@@ -842,7 +840,6 @@ static void Init( void ) {
     x_soundThud = Mix_LoadWAV( GetAssetPath( "thud.ogg" ) );
     x_soundShift = Mix_LoadWAV( GetAssetPath( "shift.ogg" ) );
 
-    UpdateMusicVolume();
     Mix_VolumeChunk( x_soundPop, MIX_MAX_VOLUME / 4 );
     Mix_VolumeChunk( x_soundShift, MIX_MAX_VOLUME / 2 );
 
@@ -1363,7 +1360,7 @@ static int GetTotalErasedLines( void ) {
 }
 
 static bool_t IsVSGame( void ) {
-    return AllSeatsActive() || ( x_pls[0].matchEndTime > 0 && x_pls[0].matchEndTime == x_pls[1].matchEndTime );
+    return NumActiveHumanPlayers() > 1 || IsDemo(); 
 }
 
 static void UpdateAllSeats( int time, int deltaTime ) {
@@ -1407,12 +1404,11 @@ static void UpdateAllSeats( int time, int deltaTime ) {
                     UnlatchButtons( p );
                     p->matchEndTime = time;
                     p->active = false;
+                    x_timeSinceGameOver = 0;
                     CON_Printf( "Game Over\n" );
                 }
             }
-            if ( ! AnySeatActive() ) {
-                Mix_HaltMusic();
-            }
+            UpdateMusicPlayback();
         }
     }
 }
@@ -1427,13 +1423,14 @@ static void AppFrame( void ) {
         DrawAtlas();
     }
     if ( VAR_Changed( x_musicVolume ) ) {
-        UpdateMusicVolume();
+        UpdateMusicPlayback();
     }
     float showFunc = VAR_Num( x_showSpeedFunc );
     if ( showFunc ) {
         DrawSpeedFunc( showFunc );
     }
     SDL_Delay( 10 );
+    x_timeSinceGameOver  += deltaTime;
     x_prevTime = now;
 }
 
