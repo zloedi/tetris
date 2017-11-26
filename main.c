@@ -313,11 +313,9 @@ typedef struct {
     int score;
     int numButtonActions;
     int humanIdleTime;
-
+    int cpuIdleTime;
     char **cpuCommands;
     int cpuCurrentCommand;
-    int cpuConsumeSleep;
-
     char board[sizeof( x_board )];
 } playerSeat_t;
 
@@ -658,14 +656,17 @@ static int CPUGetAPM( void ) {
     return result;
 }
 
-static void CPUTryConsumeCommand( playerSeat_t *pls, int deltaTime ) {
-    pls->cpuConsumeSleep += deltaTime;
+static void CPUUpdate( playerSeat_t *pls, int deltaTime ) {
+    pls->cpuIdleTime += deltaTime;
+    if ( pls->cpuIdleTime > 4000 ) {
+        CPUEvaluate( pls );
+    }
     if ( pls->cpuCommands ) {
         int delay = 60000 / CPUGetAPM();
-        if ( pls->cpuConsumeSleep >= delay ) {
+        if ( pls->cpuIdleTime >= delay ) {
             char *cmd = pls->cpuCommands[pls->cpuCurrentCommand];
             CMD_ExecuteString( cmd );
-            pls->cpuConsumeSleep = 0;
+            pls->cpuIdleTime = 0;
             pls->cpuCurrentCommand++;
             if ( pls->cpuCurrentCommand == stb_sb_count( pls->cpuCommands ) ) {
                 CPUClearCommands( pls );
@@ -1097,9 +1098,11 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int le
     bool_t keepPlaying = pls->active;
 
     pls->humanIdleTime += deltaTime;
-    CPUTryConsumeCommand( pls, deltaTime );
 
     if ( pls->active ) {
+        if ( IsCPU( pls ) ) {
+            CPUUpdate( pls, deltaTime );
+        }
         pls->gameDuration += deltaTime;
         pls->speed = GetSpeed( level );
         TryMoveSideTime( pls, deltaTime );
