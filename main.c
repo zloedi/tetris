@@ -89,7 +89,8 @@ Tue Sep 12 16:16:19 EEST 2017
 #define DBG_PRINT CON_Printf
 #include "zhost.h"
 
-#define TIME_TO_CPU_KICK_IN 8000
+#define MAX_PLAYERS 2
+#define TIME_TO_CPU_KICK_IN 30000
 
 const c2_t x_boardSize = { .x = 12, .y = 21 };
 #define SEAT_WIDTH (x_boardSize.x+6)
@@ -288,6 +289,7 @@ typedef enum {
 
 typedef struct {
     bool_t active;
+    int gameDuration;
     int matchEndTime;
     int deviceType;
     int deviceId;
@@ -305,8 +307,9 @@ typedef struct {
     int lastScoreGainAlpha;
     int lastScoreGain;
     int score;
+    int numButtonActions;
+    int humanIdleTime;
 
-    int cpuTimeSinceHumanInteract;
     char **cpuCommands;
     int cpuCurrentCommand;
     int cpuConsumeSleep;
@@ -578,17 +581,72 @@ void CPUEvaluate( playerSeat_t *pls ) {
     }
 }
 
+static bool_t IsCPU( playerSeat_t *pls ) {
+    return pls->humanIdleTime >= TIME_TO_CPU_KICK_IN;
+}
+
+static void CPUAcquire( playerSeat_t *pls ) {
+    pls->humanIdleTime = TIME_TO_CPU_KICK_IN;
+}
+
+static void CPUHandOver( playerSeat_t *pls ) {
+    CPUClearCommands( pls );
+    UnlatchButtons( pls );
+    pls->humanIdleTime = 0;
+}
+
+static int APM( playerSeat_t *pls  ) {
+    if ( ! pls->gameDuration ) {
+        return 666;
+    }
+    return pls->numButtonActions * 60000 / pls->gameDuration;
+}
+
+static int NumCPUPlayers( void ) {
+    int n = 0;
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
+        n += IsCPU( &x_pls[i] );
+    }
+    return n;
+}
+
+static int NumHumanPlayers( void ) {
+    return MAX_PLAYERS - NumCPUPlayers();
+}
+
+static bool_t IsDemo( void ) {
+    return ! NumHumanPlayers();
+}
+
+static int CPUGetAPM( void ) {
+    if ( IsDemo() ) {
+        return 666;
+    }
+    int result = 100;
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
+        playerSeat_t *p = &x_pls[i];
+        if ( ! IsCPU( p ) ) {
+            int cpuAPM = APM( p ) * 2;
+            result = Maxi( result, cpuAPM );
+        }
+    }
+    return result;
+}
+
 static void CPUTryConsumeCommand( playerSeat_t *pls, int deltaTime ) {
     pls->cpuConsumeSleep += deltaTime;
-    if ( pls->cpuCommands && pls->cpuConsumeSleep >= 200 ) {
-        char *cmd = pls->cpuCommands[pls->cpuCurrentCommand];
-        CMD_ExecuteString( cmd );
-        pls->cpuConsumeSleep = 0;
-        pls->cpuCurrentCommand++;
-        if ( pls->cpuCurrentCommand == stb_sb_count( pls->cpuCommands ) ) {
-            CPUClearCommands( pls );
-        }
-    } 
+    if ( pls->cpuCommands ) {
+        int delay = 60000 / CPUGetAPM();
+        if ( pls->cpuConsumeSleep >= delay ) {
+            char *cmd = pls->cpuCommands[pls->cpuCurrentCommand];
+            CMD_ExecuteString( cmd );
+            pls->cpuConsumeSleep = 0;
+            pls->cpuCurrentCommand++;
+            if ( pls->cpuCurrentCommand == stb_sb_count( pls->cpuCommands ) ) {
+                CPUClearCommands( pls );
+            }
+        } 
+    }
 }
 
 static void PickShapeAndReset( playerSeat_t *pls ) {
@@ -652,19 +710,6 @@ static playerSeat_t* GetSeat( int type, int id ) {
     return NULL;
 }
 
-static bool_t IsCPU( playerSeat_t *pls ) {
-    return pls->cpuTimeSinceHumanInteract >= TIME_TO_CPU_KICK_IN;
-}
-
-static void CPUAcquire( playerSeat_t *pls ) {
-    pls->cpuTimeSinceHumanInteract = TIME_TO_CPU_KICK_IN;
-}
-
-static void CPUHandOver( playerSeat_t *pls ) {
-    CPUClearCommands( pls );
-    UnlatchButtons( pls );
-}
-
 static bool_t AllSeatsActive( void ) {
     return x_pls[0].active && x_pls[1].active;
 }
@@ -712,9 +757,21 @@ static void Restart_f( void ) {
     }
 }
 
-static bool_t IsDemo( void ) {
-    return AllSeatsActive() && IsCPU( &x_pls[0] ) && IsCPU( &x_pls[1] );
-}
+//static int NumActiveHumanPlayers( void ) {
+//    int n = 0;
+//    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
+//        n += x_pls[i].active && ! IsCPU( &x_pls[i] );
+//    }
+//    return n;
+//}
+
+//static int NumActiveCPUPlayers( void ) {
+//    int n = 0;
+//    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
+//        n += x_pls[i].active && IsCPU( &x_pls[i] );
+//    }
+//    return n;
+//}
 
 static void CPUStartGame( playerSeat_t *pls, int id ) {
     // a non-existing joystick for an AI until another human picks it up
@@ -724,14 +781,18 @@ static void CPUStartGame( playerSeat_t *pls, int id ) {
 }
 
 static bool_t OnAnyButton_f( int code, bool_t down ) {
+    if ( ! code ) {
+        return false;
+    }
+    int type = I_IsJoystickCode( code ) ? 'j' : 'k';
+    int id = '0' + I_DeviceOfCode( code );
+    playerSeat_t *pls = GetSeat( type, id );
     bool_t result = false;
-    if ( down && code ) {
-        int type = I_IsJoystickCode( code ) ? 'j' : 'k';
-        int id = '0' + I_DeviceOfCode( code );
-        playerSeat_t *pls = GetSeat( type, id );
+    if ( down ) {
         if ( IsDemo() || ! AnySeatActive() ) {
             int sel = pls ? pls - x_pls : 0;
             StartNewGame( &x_pls[sel], type, id );
+            x_pls[sel].humanIdleTime = 0;
             CPUStartGame( &x_pls[( sel + 1 ) & 1], '9' );
             CON_Printf( "Start new game: %c%c\n", type, id ); 
             result = true;
@@ -745,19 +806,21 @@ static bool_t OnAnyButton_f( int code, bool_t down ) {
                     CON_Printf( "Rejoined the game: %c%c\n", type, id ); 
                     result = true;
                 } 
-                pls->cpuTimeSinceHumanInteract = 0;
             } else {
                 playerSeat_t *freeSeat = GetFreeSeat( type, id );
                 if ( freeSeat ) {
                     CPUHandOver( freeSeat );
                     freeSeat->deviceType = type;
                     freeSeat->deviceId = id;
-                    freeSeat->cpuTimeSinceHumanInteract = 0;
                     CON_Printf( "Joined the game: %c%c\n", type, id ); 
                     result = true;
                 }
             }
         }
+    }
+    if ( pls ) {
+        pls->numButtonActions += ! down;
+        pls->humanIdleTime = 0;
     }
     return result;
 }
@@ -1036,10 +1099,11 @@ static int GetSpeed( int i ) {
 static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int level, int scoreCompare ) {
     bool_t keepPlaying = pls->active;
 
+    pls->humanIdleTime += deltaTime;
     CPUTryConsumeCommand( pls, deltaTime );
 
     if ( pls->active ) {
-        pls->cpuTimeSinceHumanInteract += deltaTime;
+        pls->gameDuration += deltaTime;
         pls->speed = GetSpeed( level );
         TryMoveSideTime( pls, deltaTime );
         if ( ! TryMoveDown( pls, deltaTime ) ) {
@@ -1064,7 +1128,7 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int le
 
     DrawStripes( boffset );
 
-    if ( pls->active || pls->score > 0 ) {
+    if ( pls->active || pls->gameDuration > 0 ) {
         c2_t shapePos = c2FixedToInt( pls->currentPos );
         const char *shape = GetCurrentBitmap( pls );
         if ( ! VAR_Num( x_skipGhostShape ) ) {
@@ -1328,14 +1392,14 @@ static void UpdateAllSeats( int time, int deltaTime ) {
         keepPlaying[i] = UpdateSeat( offset[i], p, deltaTime, level, i == 0 ? scoreLead : -scoreLead );
     }
 
-    if ( AnySeatActive() ) {
-        if ( IsDemo() ) { 
-            if ( ! keepPlaying[0] || ! keepPlaying[0] ) {
-                StartDemoGame();
-            }
-        } else if ( ( IsCPU( &x_pls[0] ) && ! keepPlaying[1] )
+    if ( IsDemo() ) { 
+        if ( ! keepPlaying[0] || ! keepPlaying[1] ) {
+            StartDemoGame();
+        }
+    } else if ( AnySeatActive() ) {
+        if ( ( IsCPU( &x_pls[0] ) && ! keepPlaying[1] )
             || ( IsCPU( &x_pls[1] ) && ! keepPlaying[0] )
-            || ( ! keepPlaying[0] && ! keepPlaying[0] ) ) {
+            || ( ! keepPlaying[0] && ! keepPlaying[1] ) ) {
             for ( int i = 0; i < 2; i++ ) {
                 playerSeat_t *p = &x_pls[i];
                 if ( p->active ) {
