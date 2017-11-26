@@ -660,6 +660,11 @@ static void CPUAcquire( playerSeat_t *pls ) {
     pls->cpuTimeSinceHumanInteract = TIME_TO_CPU_KICK_IN;
 }
 
+static void CPUHandOver( playerSeat_t *pls ) {
+    CPUClearCommands( pls );
+    UnlatchButtons( pls );
+}
+
 static bool_t AllSeatsActive( void ) {
     return x_pls[0].active && x_pls[1].active;
 }
@@ -736,8 +741,7 @@ static bool_t OnAnyButton_f( int code, bool_t down ) {
                     StartNewGame( pls, type, id );
                     result = true;
                 } else if ( IsCPU( pls ) ) {
-                    CPUClearCommands( pls );
-                    UnlatchButtons( pls );
+                    CPUHandOver( pls );
                     CON_Printf( "Rejoined the game: %c%c\n", type, id ); 
                     result = true;
                 } 
@@ -745,8 +749,7 @@ static bool_t OnAnyButton_f( int code, bool_t down ) {
             } else {
                 playerSeat_t *freeSeat = GetFreeSeat( type, id );
                 if ( freeSeat ) {
-                    CPUClearCommands( freeSeat );
-                    UnlatchButtons( pls );
+                    CPUHandOver( freeSeat );
                     freeSeat->deviceType = type;
                     freeSeat->deviceId = id;
                     freeSeat->cpuTimeSinceHumanInteract = 0;
