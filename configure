@@ -9,5 +9,5 @@ APP_OBJS = [
     "main",
 ]
 
-zbld.Configure( appObjs = [( "./", APP_OBJS )], targetName = "tetris" )
+zbld.Configure( appObjs = [( "./", APP_OBJS )], targetName = "tetris", doIcon = True )
 zbld.PostConfigure()
