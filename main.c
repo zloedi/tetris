@@ -3,10 +3,13 @@
 /*
 
 TODO
-Less bass on drop
-Do icon
 Glitchy hat switch on xbox controller
 Fix joystick locks and other crap on windows
+Full screen
+More than 2 players
+
+IN PROGRESS
+
 Controller support.
     * rotate with any up axis
     * rotate with any button
@@ -14,14 +17,15 @@ Controller support.
     * move horizontal any horizontal axis
     * move using the hat switch
     hotplug and controllers.
-More than 2 players
-Wait a bit after game over
-
-IN PROGRESS
-
-Wake up cpu earlier when start playing
 
 DONE
+
+Thu, Nov 30, 2017 17:58:13
+
+* Wake up cpu earlier when start playing
+* Less bass on drop
+* Do icon
+* Wait a bit after game over
 
 Fri Nov 24 10:48:46 EET 2017
 
