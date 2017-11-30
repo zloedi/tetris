@@ -7,7 +7,8 @@ import zbld
 
 APP_OBJS = [
     "main",
+    "icon.rc",
 ]
 
-zbld.Configure( appObjs = [( "./", APP_OBJS )], targetName = "tetris", doIcon = True )
+zbld.Configure( appObjs = [( "./", APP_OBJS )], targetName = "tetris" )
 zbld.PostConfigure()
