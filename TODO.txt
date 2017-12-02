@@ -1,9 +1,21 @@
+Try github releases
+Add licens in github
+Make animated gif for github readme
+Full screen
 Glitchy hat switch on xbox controller
 Fix joystick locks and other crap on windows
-Full screen
 More than 2 players
+calculate num shape bitmaps instead of entering them.
+Don't use Renderer drawing for atlas.
+
 
 IN PROGRESS
+
+
+Put music url in the readme
+
+
+//============================================================================================
 
 DONE
 

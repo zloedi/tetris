@@ -174,9 +174,6 @@ static c2_t x_tilesetSize;
 static c2_t x_tileSize;
 static int x_glyphLeft;
 static int x_glyphWidth;
-static rImage_t *ASCIITexture;
-static v2_t ASCIITextureSize;
-static v2_t TileSize;
 static int x_pixelSize;
 static var_t *x_showAtlas;
 static var_t *x_hiscore;
@@ -191,6 +188,7 @@ static var_t *x_speedCoefB;
 static var_t *x_speedCoefC;
 static var_t *x_joystickDeadZone;
 static var_t *x_nextShape;
+static var_t *x_skipMsgWhieCPU;
 static int x_timeSinceGameOver;
 static int x_prevTime;
 
@@ -232,12 +230,22 @@ static playerSeat_t x_pls[2];
 
 static void DrawAtlas( void ) {
     v2_t windowSize = R_GetWindowSize();
-    v2_t position = v2xy( windowSize.x - ASCIITextureSize.x, 0 );
-    R_ColorC( colRed );
-    R_BlendPicV2( position, ASCIITextureSize, v2zero, v2one, ASCIITexture );
+    int scale = Clampi( VAR_Num( x_showAtlas ), 1, 10 );
+    int w = scale * x_tilesetSize.x;
+    SDL_SetTextureBlendMode( x_tileset, SDL_BLENDMODE_NONE );
+    SDL_SetTextureColorMod( x_tileset, 255, 255, 255 );
+    SDL_SetTextureAlphaMod( x_tileset, 255 );
+    SDL_Rect dst = {
+        .x = windowSize.x - w,
+        .y = 0,
+        .w = w,
+        .h = scale * x_tilesetSize.y,
+    };
+    SDL_RenderCopy( r_renderer, x_tileset, NULL, &dst );
 }
 
 static void DrawTile( SDL_Rect *dst, int index, color_t color ) {
+    SDL_SetTextureBlendMode( x_tileset, SDL_BLENDMODE_BLEND );
     SDL_SetTextureColorMod( x_tileset,
             ( Uint8 )( color.r * 255 ), 
             ( Uint8 )( color.g * 255 ),
@@ -391,8 +399,7 @@ static int EvalScore( const char *board, c2_t posOnBoard, const char *bitmap ) {
             if ( ! IsBlank( ReadTile( c2xy( x, y ), bitmap, x_shapeSize ) ) ) {
                 for ( int i = 0; i < 4; i++ ) {
                     c2_t pb = c2Add( p[i], posOnBoard );
-                    int blank = IsBlank( ReadTileOnBoard( board, pb ) );
-                    score += yScore * ! blank;
+                    score += yScore * ! IsBlank( ReadTileOnBoard( board, pb ) );
                 }
             }
         }
@@ -412,9 +419,11 @@ static int EvalDrop( playerSeat_t *pls, c2_t posOnBoard, const char *bitmap ) {
 static char* CPUGetCommand( const char *bind, int deviceType, int deviceId, bool_t doRelease ) {
     char engage[32];
     char release[32];
-    CMD_FromBindBuf( bind, deviceType == 'j', deviceId - '0', true, I_AXIS_MAX_VALUE, engage, 32 );
+    int dev = deviceId - '0';
+    bool_t isJoy = deviceType == 'j';
+    CMD_FromBindBuf( bind, isJoy, dev, true, I_AXIS_MAX_VALUE, engage, 32 );
     if ( doRelease ) {
-        CMD_FromBindBuf( bind, deviceType == 'j', deviceId - '0', false, I_AXIS_MAX_VALUE, release, 32 );
+        CMD_FromBindBuf( bind, isJoy, dev, false, I_AXIS_MAX_VALUE, release, 32 );
         return A_StrDup( va( "%s; %s", engage, release ) );
     }
     return A_StrDup( engage );
@@ -422,7 +431,6 @@ static char* CPUGetCommand( const char *bind, int deviceType, int deviceId, bool
 
 static void CPUPushCommand( playerSeat_t *pls, const char *bind, bool_t engage ) {
     char *cmd = CPUGetCommand( bind, pls->deviceType, pls->deviceId, engage );
-    //PrintString( cmd );
     stb_sb_push( pls->cpuCommands, cmd );
 }
 
@@ -432,7 +440,6 @@ static void CPUClearCommands( playerSeat_t *pls ) {
     }
     stb_sb_free( pls->cpuCommands );
     pls->cpuCommands = NULL;
-    //CON_Printf( "clear commands\n" );
 }
 
 void CPUEvaluate( playerSeat_t *pls ) {
@@ -443,8 +450,7 @@ void CPUEvaluate( playerSeat_t *pls ) {
     int numRotates = 0;
     c2_t bestDrop;
     c2_t origin = c2FixedToInt( pls->currentPos );
-    c2_t pos = origin;
-    for ( pos.x = -2; pos.x < x_boardSize.x + 2; pos.x++ ) {
+    for ( c2_t pos = c2xy( -2, origin.y ); pos.x < x_boardSize.x + 2; pos.x++ ) {
         shape_t *curShape = &x_shapes[pls->currentShape];
         for ( int i = 0; i < curShape->numBitmaps; i++ ) {
             int nextBitmap = ( pls->currentBitmap + i ) % curShape->numBitmaps;
@@ -486,13 +492,13 @@ static int NumCPUPlayers( void ) {
     return n;
 }
 
-static int NumActiveHumanPlayers( void ) {
-    int n = 0;
-    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
-        n += x_pls[i].active && ! IsCPU( &x_pls[i] );
-    }
-    return n;
-}
+//static int NumActiveHumanPlayers( void ) {
+//    int n = 0;
+//    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
+//        n += x_pls[i].active && ! IsCPU( &x_pls[i] );
+//    }
+//    return n;
+//}
 
 //static int NumActiveCPUPlayers( void ) {
 //    int n = 0;
@@ -520,7 +526,6 @@ static bool_t AnySeatActive( void ) {
 
 static void UpdateMusicPlayback( void ) {
     if ( IsDemo() ) {
-        PrintBool( IsDemo() );
         Mix_HaltMusic();
     } else if ( ! AnySeatActive() ) {
         Mix_FadeOutMusic( 300 );
@@ -621,7 +626,7 @@ static void StartNewGame( playerSeat_t *pls, int deviceType, int deviceId ) {
 static playerSeat_t* ArgvSeat( void ) {
     int type = CMD_ArgvDeviceType();
     int id = CMD_ArgvDeviceId();
-    for ( int i = 0; i < 2; i++ ) {
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
         playerSeat_t *pls = &x_pls[i];
         if ( pls->deviceType == type && pls->deviceId == id ) {
             return pls;
@@ -631,7 +636,7 @@ static playerSeat_t* ArgvSeat( void ) {
 }
 
 static playerSeat_t* GetSeat( int type, int id ) {
-    for ( int i = 0; i < 2; i++ ) {
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
         playerSeat_t *p = &x_pls[i];
         if ( p->deviceType == type && p->deviceId == id ) {
             return p;
@@ -645,13 +650,13 @@ static playerSeat_t* GetFreeSeat( int hintType, int hintId ) {
     if ( p && ( ! p->active || IsCPU( p ) ) ) {
         return p;
     }
-    for ( int i = 0; i < 2; i++ ) {
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
         playerSeat_t *p = &x_pls[i];
         if ( ! p->active ) {
             return p;
         }
     }
-    for ( int i = 0; i < 2; i++ ) {
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
         playerSeat_t *p = &x_pls[i];
         if ( IsCPU( p ) ) {
             return p;
@@ -661,7 +666,7 @@ static playerSeat_t* GetFreeSeat( int hintType, int hintId ) {
 }
 
 //static bool_t IsControllerTaken( int type, int id ) {
-//    for ( int i = 0; i < 2; i++ ) {
+//    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
 //        playerSeat_t *pls = &x_pls[i];
 //        if ( pls->active && pls->deviceType == type && pls->deviceId == id ) {
 //            return true;
@@ -671,7 +676,7 @@ static playerSeat_t* GetFreeSeat( int hintType, int hintId ) {
 //}
 
 static void Restart_f( void ) {
-    for ( int i = 0; i < 2; i++ ) {
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
         playerSeat_t *pls = &x_pls[i];
         if ( pls->active ) {
             StartNewGame( pls, pls->deviceType, pls->deviceId );
@@ -700,10 +705,11 @@ static bool_t OnAnyButton_f( int device, int code, bool_t down ) {
     bool_t result = false;
     if ( down ) {
         if ( IsDemo() || ! AnySeatActive() ) {
-            int sel = pls ? pls - x_pls : 0;
-            StartNewGame( &x_pls[sel], type, id );
-            x_pls[sel].humanIdleTime = 0;
-            CPUStartGame( &x_pls[( sel + 1 ) & 1], '9' );
+            playerSeat_t *human = pls ? pls : &x_pls[0];
+            playerSeat_t *cpu = &x_pls[( human - x_pls + 1 ) % MAX_PLAYERS];
+            StartNewGame( human, type, id );
+            human->humanIdleTime = 0;
+            CPUStartGame( cpu, '0' + ( device + 1 ) % I_MAX_DEVICES );
             CON_Printf( "Start new game: %c%c\n", type, id ); 
             result = true;
         } else {
@@ -736,9 +742,9 @@ static bool_t OnAnyButton_f( int device, int code, bool_t down ) {
 }
 
 static void StartDemoGame( void ) {
-    for ( int i = 0; i < 2; i++ ) {
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
         playerSeat_t *p = &x_pls[i];
-        CPUStartGame( p, '8' + i );
+        CPUStartGame( p, '0' + i );
         CPUEvaluate( p );
     }
 }
@@ -770,9 +776,6 @@ static void Init( void ) {
         x_tileset = R_CreateStaticTexFromBitmap( bits, x_tilesetSize, bytesPerPixel );
         A_Free( bits );
     }
-    SDL_SetTextureBlendMode( x_tileset, SDL_BLENDMODE_BLEND );
-    ASCIITexture = R_LoadStaticTextureEx( "cp437_12x12.png", &ASCIITextureSize );
-    TileSize = v2Scale( ASCIITextureSize, 1 / 16. );
     x_tileSize = c2Divs( x_tilesetSize, 16 );
     x_glyphLeft = x_tileSize.x % 6 == 0 ? x_tileSize.x / 6 : x_tileSize.x / 10;
     x_glyphWidth = x_tileSize.x - x_glyphLeft * 2;
@@ -971,11 +974,14 @@ static void TryMoveSideTime( playerSeat_t *pls, int deltaTime ) {
 }
 
 static bool_t UpdateHiscore( playerSeat_t *pls ) {
-    if ( VAR_Num( x_hiscore ) <= pls->score ) {
-        VAR_Set( x_hiscore, va( "%d", pls->score ), false );
-        return true;
+    if ( VAR_Num( x_hiscore ) > pls->score ) {
+        return false;
     }
-    return false;
+    if ( IsCPU( pls ) ) {
+        return false;
+    }
+    VAR_Set( x_hiscore, va( "%d", pls->score ), false );
+    return true;
 }
 
 static void DrawStripes( c2_t offset ) {
@@ -1056,7 +1062,7 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int le
         DrawBitmapOff( boffset, c2xy( x, 2 ), 
                         nextShape->bitmaps[0], x_shapeSize, colWhite );
         color_t scoreCol = colWhite;
-        color_t hiscoreCol = colWhite;
+        color_t hiscoreCol = IsCPU( pls ) ? colGrayThird : colWhite;
         if ( UpdateHiscore( pls ) ) {
             hiscoreCol = colMagenta;
             scoreCol = colMagenta;
@@ -1070,6 +1076,7 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int le
         float alpha = Maxi( pls->lastScoreGainAlpha, 0 ) / 256.0f;
         pls->lastScoreGainAlpha -= deltaTime / 4;
         PrintInGrid( boffset, x, 9, va( "+%d", pls->lastScoreGain ), colorrgba( colOrange.r, colOrange.g, colOrange.b, alpha ) );
+        // FIXME: one hiscore for all
         PrintInGrid( boffset, x, 11, "HISCORE", colCyan );
         PrintInGrid( boffset, x, 12, va( "%d", ( int )VAR_Num( x_hiscore ) ), hiscoreCol );
         PrintInGrid( boffset, x, 14, "LINES", colCyan );
@@ -1082,7 +1089,7 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int le
         DrawBitmap( boffset, pls->board, x_boardSize, colWhite );
     }
     if ( pls->active ) {
-        if ( IsCPU( pls ) ) {
+        if ( IsCPU( pls ) && ! VAR_Num( x_skipMsgWhieCPU ) ) {
             float a = 0.2 + 0.1 * sin( SYS_RealTime() * 0.01 );
             PrintCenteredInGrid( boffset, x_boardSize, "Press a button", colorrgba( 0, 1, 1, a ) );
         }
@@ -1198,7 +1205,7 @@ static void MoveDown_f( void ) {
 
 static void RegisterVars( void ) {
     x_showAtlas = VAR_Register( "showAtlas", "0" );
-    x_hiscore = VAR_Register( "hiscore", "0" );
+    x_hiscore = VAR_Register( "hiscore", "10000" );
     x_musicVolume = VAR_Register( "musicVolume", "1" );
     x_numLinesPerLevel = VAR_Register( "numLinesPerLevel", "10" );
     x_skipBoards = VAR_Register( "skipBoards", "0" );
@@ -1210,6 +1217,7 @@ static void RegisterVars( void ) {
     x_speedCoefC = VAR_Register( "speedCoefC", "40" );
     x_joystickDeadZone = VAR_Register( "joystickDeadZone", "0.9" );
     x_nextShape = VAR_Register( "nextShape", "0" );
+    x_skipMsgWhieCPU = VAR_Register( "skipMsgWhileCPU", "0" );
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
@@ -1262,7 +1270,7 @@ static void DrawSpeedFunc( float showVal ) {
 
 static int GetTotalErasedLines( void ) {
     int numErasedLines = 0;
-    for ( int i = 0; i < 2; i++ ) {
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
         playerSeat_t *p = &x_pls[i];
         if ( p->active ) {
             numErasedLines += p->numErasedLines;
@@ -1272,7 +1280,7 @@ static int GetTotalErasedLines( void ) {
 }
 
 static bool_t IsVSGame( void ) {
-    return NumActiveHumanPlayers() > 1 || IsDemo(); 
+    return NumHumanPlayers() > 1 || IsDemo(); 
 }
 
 static void UpdateAllSeats( int time, int deltaTime ) {
@@ -1281,12 +1289,12 @@ static void UpdateAllSeats( int time, int deltaTime ) {
     int szy = Maxi( ws.y / ( x_tileSize.y * SEAT_HEIGHT ), 1 );
     x_pixelSize = Mini( szx, szy );
     c2_t tileScreen = c2Divs( c2Div( c2v2( ws ), x_tileSize ), x_pixelSize );
-    int scoreLead = 0;
+    int maxScore = 0;
     if ( IsVSGame() ) {
-        if ( x_pls[0].score > x_pls[1].score ) {
-            scoreLead = 1;
-        } else if ( x_pls[0].score < x_pls[1].score ) {
-            scoreLead = -1;
+        for ( int i = 0; i < MAX_PLAYERS; i++ ) {
+            if ( x_pls[i].score > maxScore ) {
+                maxScore = x_pls[i].score;
+            }
         }
     }
     int level = GetTotalErasedLines() / VAR_Num( x_numLinesPerLevel );
@@ -1296,9 +1304,13 @@ static void UpdateAllSeats( int time, int deltaTime ) {
         c2xy( gap / 3, 0 ),
         c2xy( tileScreen.x - SEAT_WIDTH - gap / 3, 0 ),
     };
-    for ( int i = 0; i < 2; i++ ) {
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
         playerSeat_t *p = &x_pls[i];
-        keepPlaying[i] = UpdateSeat( offset[i], p, deltaTime, level, i == 0 ? scoreLead : -scoreLead );
+        int compare = 0;
+        if ( maxScore > 0 ) {
+            compare = p->score == maxScore ? 1 : -1;
+        }
+        keepPlaying[i] = UpdateSeat( offset[i], p, deltaTime, level, compare );
     }
 
     if ( IsDemo() ) { 
@@ -1309,7 +1321,7 @@ static void UpdateAllSeats( int time, int deltaTime ) {
         if ( ( IsCPU( &x_pls[0] ) && ! keepPlaying[1] )
             || ( IsCPU( &x_pls[1] ) && ! keepPlaying[0] )
             || ( ! keepPlaying[0] && ! keepPlaying[1] ) ) {
-            for ( int i = 0; i < 2; i++ ) {
+            for ( int i = 0; i < MAX_PLAYERS; i++ ) {
                 playerSeat_t *p = &x_pls[i];
                 if ( p->active ) {
                     CPUClearCommands( p );
