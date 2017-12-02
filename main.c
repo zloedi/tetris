@@ -1,101 +1,3 @@
-//==============================================================================================
-
-/*
-
-TODO
-Glitchy hat switch on xbox controller
-Fix joystick locks and other crap on windows
-Full screen
-More than 2 players
-
-IN PROGRESS
-
-Controller support.
-    * rotate with any up axis
-    * rotate with any button
-    * move down with any down axis
-    * move horizontal any horizontal axis
-    * move using the hat switch
-    hotplug and controllers.
-
-DONE
-
-Thu, Nov 30, 2017 17:58:13
-
-* Wake up cpu earlier when start playing
-* Less bass on drop
-* Do icon
-* Wait a bit after game over
-
-Fri Nov 24 10:48:46 EET 2017
-
-* No dead zone in input code, handle it in app
-* Rotate even at edges of board
-* Show where the figure will fall as silhouette
-* The lines counter should be common to both and 20 in a VS game
-. Points gained i.e. (+100)
-* Don't get the grids too separated on wide screens
-* Set controller dead zone from app, store var in app.
-* Both players increase speed each 10 lines
-
-Wed Nov 22 19:30:30 EET 2017
-
-* Draw vertical lines 
-* Any key/button handler exposed from events.c
-
-. Level number
-* Split screen.
-    * encode controller id in the command
-    * draw the board with an offset
-    * remove all x_pls
-    * get player by command device
-    * don't kill off a seat before both seats are done.
-    * both players finished, then on press button should start in the same field
-    * optional common speed
-    * optional game over only when both are over
-    * announce winner on end game
-    * colorize score of the leader
-
-Tue Nov 14 12:52:33 EET 2017
-
-* Bonus tochki se davat za ednovremenno unishtojeni mnojestvo redove.
-* Tochki se davat za vseki iztrit red.
-* Izobraziavane na tochkite kato chast ot potrebitelskia interfeis.
-* Hiscore
-
-* Printirane sas tailove
-* Sledvashtata figura koiato shte bade aktivna sled tekushtata e pokazana na ekrana kato chast ot potrebitelskia interfeis.
-
-* Igrata stava po-barza/vdiga se nivoto sled n na broi unishtojeni redove.
-* Ako figurata ne moje da bade mestena dokato e chastichno izvan poleto, igrata e zagubena
-*     Restart na igrata s interval
-
-Mon Nov 13 16:10:20 EET 2017
-
-* Kogato figurite padnat na danoto na poleto i ochertaiat linia s ostatacite na drugite figuri, zapalneniat red se unishtojava.
-
-* Igrachat moje da varti aktivnata figura sas strelka nagore.
-*     Izpolzvaiki gorna strelka
-
-* Kogato figurite padnat na danoto na poleto, nova (proizvolna) figura se dava na igracha za manipulacia.
-    * Proverka dali figura e na danoto (ne moje da se manipulira poveche).
-    * Kopirane na starata figura varhu igralnoto pole. 
-    * Sazdavene na nova figura.
-    * Figurite sa s razlichna forma.
-
-Tue Sep 12 16:16:19 EEST 2017
-
-* Igrachat moje da mesti aktivnata figura na ekrana.
-*    Liava strelka - mesti figurata naliavo s edno pole.
-*    Diasna strelka - mesti figurata nadiasno.
-*    Dolna strelka - mesti figurata nadolu
-* Risuvane na igralnoto pole.
-* Risuvane na figura.
-* Animirane na figurata.
-* Proverka za zastapvane s igralnoto pole.
-
-*/
-
 #define DBG_PRINT CON_Printf
 #include "zhost.h"
 
@@ -784,7 +686,7 @@ static void CPUStartGame( playerSeat_t *pls, int id ) {
     CPUAcquire( pls );
 }
 
-static bool_t OnAnyButton_f( int code, bool_t down ) {
+static bool_t OnAnyButton_f( int device, int code, bool_t down ) {
     if ( ! code ) {
         return false;
     }
@@ -793,7 +695,7 @@ static bool_t OnAnyButton_f( int code, bool_t down ) {
         return true;
     }
     int type = I_IsJoystickCode( code ) ? 'j' : 'k';
-    int id = '0' + I_DeviceOfCode( code );
+    int id = '0' + device;
     playerSeat_t *pls = GetSeat( type, id );
     bool_t result = false;
     if ( down ) {
@@ -1318,16 +1220,14 @@ static void RegisterVars( void ) {
     I_Bind( "Right", "moveRight" );
     I_Bind( "Down", "moveDown" );
     I_Bind( "Up", "rotate" );
-    for ( int joy = 0; joy < I_MAX_JOYSTICKS; joy++ ) {
-        I_Bind( va( "joystick %d axis 0", joy ), "horizontalMove" );
-        I_Bind( va( "joystick %d axis 1", joy ), "-rotate ; +moveDown" );
-        for ( int button = 0; button < I_MAX_BUTTONS; button++ ) {
-            const char *str = va( "joystick %d button %d", joy, button );
-            I_Bind( str, "rotate" );
-        }
-        I_Bind( va( "joystick %d hat horizontal", joy ), "horizontalMove" );
-        I_Bind( va( "joystick %d hat vertical", joy ), "-rotate ; +moveDown" );
+    I_Bind( "joystick axis 0", "horizontalMove" );
+    I_Bind( "joystick axis 1", "-rotate ; +moveDown" );
+    for ( int button = 0; button < I_MAX_BUTTONS; button++ ) {
+        const char *str = va( "joystick button %d", button );
+        I_Bind( str, "rotate" );
     }
+    I_Bind( "joystick hat horizontal", "horizontalMove" );
+    I_Bind( "joystick hat vertical", "-rotate ; +moveDown" );
 }
 
 static void DrawSpeedFunc( float showVal ) {
