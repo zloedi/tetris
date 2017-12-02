@@ -1,7 +1,4 @@
 # Tetris
-
-----
-
 A Tetris clone written in C with split screen multiplayer and controller support.
 
 ----
