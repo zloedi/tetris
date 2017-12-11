@@ -1375,8 +1375,9 @@ static void AppFrame( void ) {
 }
 
 static void AppDone( void ) {
-    CPUClearCommands( &x_pls[0] );
-    CPUClearCommands( &x_pls[1] );
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        CPUClearCommands( &x_pls[i] );
+    }
 }
 
 int main( int argc, char *argv[] ) {
