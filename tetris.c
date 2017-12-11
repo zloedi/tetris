@@ -164,7 +164,8 @@ static shape_t x_shapes[] = {
     },
 };
 
-static const int x_numShapes = sizeof( x_shapes ) / sizeof( *x_shapes );
+#define NUM_SHAPES (sizeof(x_shapes)/sizeof(*x_shapes))
+
 static Mix_Music *x_music;
 static Mix_Chunk *x_soundPop;
 static Mix_Chunk *x_soundThud;
@@ -200,6 +201,8 @@ typedef enum {
 
 typedef struct {
     bool_t active;
+    int numShapes;
+    int bagOfShapes[NUM_SHAPES];
     int gameDuration;
     int matchEndTime;
     int deviceType;
@@ -280,9 +283,19 @@ static void DrawTileInGrid( c2_t gridCoord, int index, color_t color ) {
     DrawTileInScaledPixels( c2Mul( gridCoord, x_tileSize ), index, color );
 }
 
-static int GetRandomShape( void ) {
+static int PickShape( playerSeat_t *pls ) {
     int ns = VAR_Num( x_nextShape );
-    return ( ns == 0 ? COM_Rand() : ns ) % x_numShapes;
+    if ( ! ns ) {
+        int idx = pls->numShapes % NUM_SHAPES;
+        if ( ! idx ) {
+            COM_RandShuffle( pls->bagOfShapes, NUM_SHAPES );
+        }
+        ns = pls->bagOfShapes[idx];
+    } else {
+        ns = (ns - 1) % NUM_SHAPES;
+    }
+    pls->numShapes++;
+    return ns;
 }
 
 static c2_t c2IntToFixed( c2_t c ) {
@@ -594,7 +607,7 @@ static void CPUUpdate( playerSeat_t *pls, int deltaTime ) {
 static void PickShapeAndReset( playerSeat_t *pls ) {
     pls->currentBitmap = 0;
     pls->currentShape = pls->nextShape;
-    pls->nextShape = GetRandomShape();
+    pls->nextShape = PickShape( pls );
     pls->currentPos = c2IntToFixed( c2xy( x_boardSize.x / 2 - 2, -x_shapeSize.y + 1 ) );
 }
 
@@ -617,7 +630,10 @@ static void StartNewGame( playerSeat_t *pls, int deviceType, int deviceId ) {
     pls->deviceType = deviceType;
     pls->deviceId = deviceId;
     pls->speed = InitialSpeed();
-    pls->nextShape = GetRandomShape();
+    for ( int i = 0; i < NUM_SHAPES; i++ ) {
+        pls->bagOfShapes[i] = i;
+    }
+    pls->nextShape = PickShape( pls );
     ClearBoard( pls );
     PickShapeAndReset( pls );
     UpdateMusicPlayback();
