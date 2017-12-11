@@ -6,7 +6,7 @@ sys.path.append( SCRIPTS_DIR )
 import zbld
 
 APP_OBJS = [
-    "main",
+    "tetris",
     "icon.rc",
 ]
 
