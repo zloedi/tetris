@@ -1254,7 +1254,7 @@ static void RegisterVars( void ) {
     I_Bind( "joystick hat vertical", "-rotate ; +moveDown" );
 }
 
-static void DrawSpeedFunc( float showVal ) {
+static void DrawSpeedFunc( void ) {
     R_ColorC( colWhite );
     v2_t start = v2xy( 0, R_GetWindowSize().y );
     R_ColorC( colWhite );
@@ -1367,7 +1367,7 @@ static void AppFrame( void ) {
     }
     float showFunc = VAR_Num( x_showSpeedFunc );
     if ( showFunc ) {
-        DrawSpeedFunc( showFunc );
+        DrawSpeedFunc();
     }
     SDL_Delay( 10 );
     x_timeSinceGameOver  += deltaTime;
