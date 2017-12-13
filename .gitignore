@@ -2,6 +2,7 @@
 *.swo
 *.exe
 *.dll
+tetris*zip
 vim_session_*
 *_dbg
 tetris
