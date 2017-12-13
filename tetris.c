@@ -229,7 +229,7 @@ typedef struct {
     char board[sizeof( x_board )];
 } playerSeat_t;
 
-static playerSeat_t x_pls[2];
+static playerSeat_t x_pls[MAX_PLAYERS];
 
 static void DrawAtlas( void ) {
     v2_t windowSize = R_GetWindowSize();
@@ -534,7 +534,12 @@ static bool_t IsDemo( void ) {
 //}
 
 static bool_t AnySeatActive( void ) {
-    return x_pls[0].active || x_pls[1].active;
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
+        if ( x_pls[i].active ) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static void UpdateMusicPlayback( void ) {
@@ -639,18 +644,6 @@ static void StartNewGame( playerSeat_t *pls, int deviceType, int deviceId ) {
     UpdateMusicPlayback();
 }
 
-static playerSeat_t* ArgvSeat( void ) {
-    int type = CMD_ArgvDeviceType();
-    int id = CMD_ArgvDeviceId();
-    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
-        playerSeat_t *pls = &x_pls[i];
-        if ( pls->deviceType == type && pls->deviceId == id ) {
-            return pls;
-        }
-    }
-    return x_pls;
-}
-
 static playerSeat_t* GetSeat( int type, int id ) {
     for ( int i = 0; i < MAX_PLAYERS; i++ ) {
         playerSeat_t *p = &x_pls[i];
@@ -659,6 +652,16 @@ static playerSeat_t* GetSeat( int type, int id ) {
         }
     }
     return NULL;
+}
+
+static playerSeat_t* ArgvSeat( void ) {
+    int type = CMD_ArgvDeviceType();
+    int id = CMD_ArgvDeviceId();
+    playerSeat_t *pls = GetSeat( type, id );
+    if ( ! pls ) {
+        pls = x_pls;
+    }
+    return pls;
 }
 
 static playerSeat_t* GetFreeSeat( int hintType, int hintId ) {
