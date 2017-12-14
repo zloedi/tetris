@@ -1,170 +1,12 @@
 #define DBG_PRINT CON_Printf
 #include "zhost.h"
+#include "shapes.h"
 
 #define MAX_PLAYERS 2
 #define TIME_TO_CPU_KICK_IN 30000
 
-const c2_t x_boardSize = { .x = 12, .y = 21 };
 #define SEAT_WIDTH (x_boardSize.x+6)
 #define SEAT_HEIGHT (x_boardSize.y-1)
-char x_board[] =
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"#          #"
-"############"
-;
-
-const c2_t x_shapeSize = { .x = 4, .y = 4 };
-
-typedef struct {
-    int numBitmaps;
-    const char *bitmaps[4];
-} shape_t;
-
-static shape_t x_shapes[] = {
-    {
-        .numBitmaps = 2,
-        .bitmaps = {
-            " @  "
-            " @  "
-            " @  "
-            " @  "
-            ,
-            "    "
-            "@@@@"
-            "    "
-            "    "
-        },
-    },
-    {
-        .numBitmaps = 2,
-        .bitmaps = {
-            "    "
-            "AA  "
-            " AA "
-            "    "
-            ,
-            "    "
-            "  A "
-            " AA "
-            " A  "
-        },
-    },
-    {
-        .numBitmaps = 2,
-        .bitmaps = {
-            "    "
-            "  BB"
-            " BB "
-            "    "
-            , 
-            "    "
-            " B  "
-            " BB "
-            "  B "
-        },
-    },
-    {
-        .numBitmaps = 1,
-        .bitmaps = {
-            "    "
-            "    "
-            " CC "
-            " CC "
-        },
-    },
-    {
-        .numBitmaps = 4,
-        .bitmaps = {
-            "    "
-            "    "
-            " DDD"
-            "  D "
-            , 
-            "    "
-            "  D "
-            "  DD"
-            "  D "
-            , 
-            "    "
-            "  D "
-            " DDD"
-            "    "
-            , 
-            "    "
-            "  D "
-            " DD "
-            "  D "
-        },
-    },
-    {
-        .numBitmaps = 4,
-        .bitmaps = {
-            "    "
-            " EE "
-            " E  "
-            " E  "
-            , 
-            "    "
-            "E   "
-            "EEE "
-            "    "
-            , 
-            "    "
-            " E  "
-            " E  "
-            "EE  "
-            , 
-            "    "
-            "    "
-            "EEE "
-            "  E "
-        },
-    },
-    {
-        .numBitmaps = 4,
-        .bitmaps = {
-            "    "
-            " FF "
-            "  F "
-            "  F "
-            ,
-            "    "
-            "    "
-            " FFF"
-            " F  "
-            ,
-            "    "
-            "  F "
-            "  F "
-            "  FF"
-            ,
-            "    "
-            "   F"
-            " FFF"
-            "    "
-        },
-    },
-};
-
-#define NUM_SHAPES (sizeof(x_shapes)/sizeof(*x_shapes))
 
 static Mix_Music *x_music;
 static Mix_Chunk *x_soundPop;
@@ -204,7 +46,6 @@ typedef struct {
     int numShapes;
     int bagOfShapes[NUM_SHAPES];
     int gameDuration;
-    int matchEndTime;
     int deviceType;
     int deviceId;
     int nextShape;
@@ -333,7 +174,7 @@ static bool_t IsBlank( int tile ) {
 }
 
 static const char* GetCurrentBitmap( playerSeat_t *pls ) {
-    shape_t *curShape = &x_shapes[pls->currentShape];
+    const shape_t *curShape = &x_shapes[pls->currentShape];
     return curShape->bitmaps[pls->currentBitmap];
 }
 
@@ -464,7 +305,7 @@ void CPUEvaluate( playerSeat_t *pls ) {
     c2_t bestDrop;
     c2_t origin = c2FixedToInt( pls->currentPos );
     for ( c2_t pos = c2xy( -2, origin.y ); pos.x < x_boardSize.x + 2; pos.x++ ) {
-        shape_t *curShape = &x_shapes[pls->currentShape];
+        const shape_t *curShape = &x_shapes[pls->currentShape];
         for ( int i = 0; i < curShape->numBitmaps; i++ ) {
             int nextBitmap = ( pls->currentBitmap + i ) % curShape->numBitmaps;
             const char *bmp = curShape->bitmaps[nextBitmap];
@@ -1077,7 +918,7 @@ static bool_t UpdateSeat( c2_t boffset, playerSeat_t *pls, int deltaTime, int le
         DrawBitmap( boffset, pls->board, x_boardSize, colWhite );
         int x = x_boardSize.x + 1;
         PrintInGrid( boffset, x, 1, "NEXT", colCyan );
-        shape_t *nextShape = &x_shapes[pls->nextShape];
+        const shape_t *nextShape = &x_shapes[pls->nextShape];
         DrawBitmapOff( boffset, c2xy( x, 2 ), 
                         nextShape->bitmaps[0], x_shapeSize, colWhite );
         color_t scoreCol = colWhite;
@@ -1188,7 +1029,7 @@ static void HorzAxis_f( void ) {
 }
 
 static void Rotate( playerSeat_t *pls ) {
-    shape_t *curShape = &x_shapes[pls->currentShape];
+    const shape_t *curShape = &x_shapes[pls->currentShape];
     int nextIdx = ( pls->currentBitmap + 1 ) % curShape->numBitmaps;
     const char *bitmap = curShape->bitmaps[nextIdx];
     pls->currentPos.x -= pls->rotateClip << 8;
@@ -1345,7 +1186,6 @@ static void UpdateAllSeats( int time, int deltaTime ) {
                 if ( p->active ) {
                     CPUClearCommands( p );
                     UnlatchButtons( p );
-                    p->matchEndTime = time;
                     p->active = false;
                     x_timeSinceGameOver = 0;
                     CON_Printf( "Game Over\n" );
