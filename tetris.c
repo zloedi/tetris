@@ -32,7 +32,8 @@ static var_t *x_speedCoefC;
 static var_t *x_joystickDeadZone;
 static var_t *x_nextShape;
 static var_t *x_skipMsgWhieCPU;
-static int x_timeSinceGameOver;
+static var_t *x_cpuSkipPlay;
+static int x_gameOverCooldown;
 static int x_prevTime;
 
 typedef enum {
@@ -284,8 +285,10 @@ static char* CPUGetCommand( const char *bind, int deviceType, int deviceId, bool
 }
 
 static void CPUPushCommand( playerSeat_t *pls, const char *bind, bool_t engage ) {
-    char *cmd = CPUGetCommand( bind, pls->deviceType, pls->deviceId, engage );
-    stb_sb_push( pls->cpuCommands, cmd );
+    if ( ! VAR_Num( x_cpuSkipPlay ) ) {
+        char *cmd = CPUGetCommand( bind, pls->deviceType, pls->deviceId, engage );
+        stb_sb_push( pls->cpuCommands, cmd );
+    }
 }
 
 static void CPUClearCommands( playerSeat_t *pls ) {
@@ -401,7 +404,7 @@ static void CPUAcquire( playerSeat_t *pls ) {
     UpdateMusicPlayback();
 }
 
-static void CPUHandOver( playerSeat_t *pls ) {
+static void CPUHandOverToHuman( playerSeat_t *pls ) {
     CPUClearCommands( pls );
     UnlatchButtons( pls );
     pls->humanIdleTime = 0;
@@ -556,7 +559,7 @@ static bool_t OnAnyButton_f( int device, int code, bool_t down ) {
         return false;
     }
     // consume the input a bit after game over
-    if ( x_timeSinceGameOver < 2000 ) {
+    if ( x_gameOverCooldown > 0 ) {
         return true;
     }
     int type = I_IsJoystickCode( code ) ? 'j' : 'k';
@@ -578,14 +581,14 @@ static bool_t OnAnyButton_f( int device, int code, bool_t down ) {
                     StartNewGame( pls, type, id );
                     result = true;
                 } else if ( IsCPU( pls ) ) {
-                    CPUHandOver( pls );
+                    CPUHandOverToHuman( pls );
                     CON_Printf( "Rejoined the game: %c%c\n", type, id ); 
                     result = true;
                 } 
             } else {
                 playerSeat_t *freeSeat = GetFreeSeat( type, id );
                 if ( freeSeat ) {
-                    CPUHandOver( freeSeat );
+                    CPUHandOverToHuman( freeSeat );
                     freeSeat->deviceType = type;
                     freeSeat->deviceId = id;
                     CON_Printf( "Joined the game: %c%c\n", type, id ); 
@@ -1078,6 +1081,7 @@ static void RegisterVars( void ) {
     x_joystickDeadZone = VAR_Register( "joystickDeadZone", "0.9" );
     x_nextShape = VAR_Register( "nextShape", "0" );
     x_skipMsgWhieCPU = VAR_Register( "skipMsgWhileCPU", "0" );
+    x_cpuSkipPlay = VAR_RegisterHelp( "cpuSkipPlay", "0", "CPU stops moving its shapes." );
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
@@ -1143,6 +1147,32 @@ static bool_t IsVSGame( void ) {
     return NumHumanPlayers() > 1 || IsDemo(); 
 }
 
+static void NumKeepPlaying( bool_t keepPlaying[MAX_PLAYERS], int *numHumans, int *numCPUs ) {
+    *numHumans = 0;
+    *numCPUs = 0;
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
+        if ( keepPlaying[i] ) {
+            bool_t isCPU = IsCPU( &x_pls[i] );
+            *numHumans += ! isCPU;
+            *numCPUs += isCPU;
+        }
+    }
+}
+
+static void GameOver( void ) {
+    for ( int i = 0; i < MAX_PLAYERS; i++ ) {
+        playerSeat_t *p = &x_pls[i];
+        if ( p->active ) {
+            CPUClearCommands( p );
+            UnlatchButtons( p );
+            p->active = false;
+            x_gameOverCooldown = 2000;
+            CON_Printf( "Game Over\n" );
+        }
+    }
+    UpdateMusicPlayback();
+}
+
 static void UpdateAllSeats( int time, int deltaTime ) {
     v2_t ws = R_GetWindowSize();
     int szx = Maxi( ws.x / ( x_tileSize.x * SEAT_WIDTH * 2 ), 1 );
@@ -1159,7 +1189,7 @@ static void UpdateAllSeats( int time, int deltaTime ) {
     }
     int level = GetTotalErasedLines() / VAR_Num( x_numLinesPerLevel );
     int gap = tileScreen.x - SEAT_WIDTH * 2; 
-    int keepPlaying[2];
+    bool_t keepPlaying[MAX_PLAYERS];
     c2_t offset[] =  {
         c2xy( gap / 3, 0 ),
         c2xy( tileScreen.x - SEAT_WIDTH - gap / 3, 0 ),
@@ -1172,27 +1202,18 @@ static void UpdateAllSeats( int time, int deltaTime ) {
         }
         keepPlaying[i] = UpdateSeat( offset[i], p, deltaTime, level, compare );
     }
-
-    if ( IsDemo() ) { 
-        if ( ! keepPlaying[0] || ! keepPlaying[1] ) {
-            StartDemoGame();
-        }
-    } else if ( AnySeatActive() ) {
-        if ( ( IsCPU( &x_pls[0] ) && ! keepPlaying[1] )
-            || ( IsCPU( &x_pls[1] ) && ! keepPlaying[0] )
-            || ( ! keepPlaying[0] && ! keepPlaying[1] ) ) {
-            for ( int i = 0; i < MAX_PLAYERS; i++ ) {
-                playerSeat_t *p = &x_pls[i];
-                if ( p->active ) {
-                    CPUClearCommands( p );
-                    UnlatchButtons( p );
-                    p->active = false;
-                    x_timeSinceGameOver = 0;
-                    CON_Printf( "Game Over\n" );
-                }
+    if ( AnySeatActive() ) {
+        int kpHumans, kpCPUs;
+        NumKeepPlaying( keepPlaying, &kpHumans, &kpCPUs );
+        if ( IsDemo() ) {
+            if ( kpCPUs == 0 ) {
+                StartDemoGame();
             }
-            UpdateMusicPlayback();
+        } else if ( kpHumans == 0 ) {
+            GameOver();
         }
+    } else {
+        x_gameOverCooldown = Maxi( x_gameOverCooldown - deltaTime, 0 );
     }
 }
 
@@ -1213,7 +1234,6 @@ static void AppFrame( void ) {
         DrawSpeedFunc();
     }
     SDL_Delay( 10 );
-    x_timeSinceGameOver  += deltaTime;
     x_prevTime = now;
 }
 
