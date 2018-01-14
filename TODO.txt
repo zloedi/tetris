@@ -1,3 +1,4 @@
+Block horizontal axis when down axis is on.
 Implement rotate cw
 Full screen
 Glitchy hat switch on xbox controller
@@ -5,19 +6,20 @@ Fix joystick locks and other crap on windows
 More than 2 players
 Number of bitmaps of shapes can be derived.
 
-
 IN PROGRESS
 
-Controller support instead of joystick support.
-    Map instance id to index in device array.
-    Use mapping in I_NormDevice.
-    Remove OpenAll/CloseAll pairs.
-    Fallback to joystick if not a game controller.
-    Use the sdl game controller constants for input axes and buttons.
 
 //============================================================================================
 
 DONE
+
+Sun, Jan 14, 2018 23:03:51
+* Controller support instead of joystick support.
+    * Map instance id to index in device array.
+    . Use mapping in I_NormDevice.
+    * Remove OpenAll/CloseAll pairs.
+    * Fallback to joystick if not a game controller.
+    . Use the sdl game controller constants for input axes and buttons.
 
 Sun, Jan 14, 2018 16:11:33
 * Don't use Renderer drawing for atlas.
