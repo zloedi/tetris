@@ -1,17 +1,26 @@
+Implement rotate cw
 Full screen
 Glitchy hat switch on xbox controller
 Fix joystick locks and other crap on windows
 More than 2 players
-calculate num shape bitmaps instead of entering them.
-Don't use Renderer drawing for atlas.
 Number of bitmaps of shapes can be derived.
 
 
 IN PROGRESS
 
+Controller support instead of joystick support.
+    Map instance id to index in device array.
+    Use mapping in I_NormDevice.
+    Remove OpenAll/CloseAll pairs.
+    Fallback to joystick if not a game controller.
+    Use the sdl game controller constants for input axes and buttons.
+
 //============================================================================================
 
 DONE
+
+Sun, Jan 14, 2018 16:11:33
+* Don't use Renderer drawing for atlas.
 
 Mon, Dec 11, 2017 19:16:05
 * Use a bag of seven shapes to pull a random one from.
