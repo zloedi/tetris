@@ -58,7 +58,8 @@ typedef struct {
     butState_t butMoveDown;
     butState_t butMoveLeft;
     butState_t butMoveRight;
-    butState_t butRotate;
+    butState_t butRotateCW;
+    butState_t butRotateCCW;
     int numErasedLines;
     int lastScoreGainAlpha;
     int lastScoreGain;
@@ -160,14 +161,15 @@ static void UnlatchButtons( playerSeat_t *pls ) {
     UnlatchButton( &pls->butMoveDown );
     UnlatchButton( &pls->butMoveLeft );
     UnlatchButton( &pls->butMoveRight );
-    UnlatchButton( &pls->butRotate );
+    UnlatchButton( &pls->butRotateCW );
+    UnlatchButton( &pls->butRotateCCW );
 }
 
 static void LatchButtons( playerSeat_t *pls ) {
     LatchButton( &pls->butMoveDown );
     LatchButton( &pls->butMoveLeft );
     LatchButton( &pls->butMoveRight );
-    LatchButton( &pls->butRotate );
+    LatchButton( &pls->butRotateCCW );
 }
 
 static bool_t IsBlank( int tile ) {
@@ -326,7 +328,7 @@ void CPUEvaluate( playerSeat_t *pls ) {
         int d = bestDrop.x - origin.x;
         int numMoves = abs( d );
         for ( int i = 0; i < numRotates; i++ ) {
-            CPUPushCommand( pls, "rotate", true );
+            CPUPushCommand( pls, "rotate_ccw", true );
         }
         for ( int i = 0; i < numMoves; i++ ) {
             const char *bind = d > 0 ? "moveRight" : "moveLeft";
@@ -1031,9 +1033,9 @@ static void HorzAxis_f( void ) {
     DoLeftButton( ArgvSeat(), as < 0 );
 }
 
-static void Rotate( playerSeat_t *pls ) {
+static void Rotate( playerSeat_t *pls, int sign ) {
     const shape_t *curShape = &x_shapes[pls->currentShape];
-    int nextIdx = ( pls->currentBitmap + 1 ) % curShape->numBitmaps;
+    int nextIdx = (unsigned)( pls->currentBitmap + sign ) % curShape->numBitmaps;
     const char *bitmap = curShape->bitmaps[nextIdx];
     pls->currentPos.x -= pls->rotateClip << 8;
     pls->rotateClip = 0;
@@ -1055,11 +1057,20 @@ static void Rotate( playerSeat_t *pls ) {
     }
 }
 
-static void Rotate_f( void ) {
+static void RotateCommand( int sign ) {
     playerSeat_t *pls = ArgvSeat();
-    if ( DoButton( CMD_ArgvEngaged(), &pls->butRotate, ! IsCPU( pls ) ) ) {
-        Rotate( pls );
+    butState_t *bs = sign > 0 ? &pls->butRotateCCW : &pls->butRotateCW;
+    if ( DoButton( CMD_ArgvEngaged(), bs, ! IsCPU( pls ) ) ) {
+        Rotate( pls, sign );
     }
+}
+
+static void RotateCCW_f( void ) {
+    RotateCommand( 1 );
+}
+
+static void RotateCW_f( void ) {
+    RotateCommand( -1 );
 }
 
 static void MoveDown_f( void ) {
@@ -1067,6 +1078,7 @@ static void MoveDown_f( void ) {
 }
 
 static void RegisterVars( void ) {
+    VAR_SetCFGVersion( 1 );
     x_showAtlas = VAR_Register( "showAtlas", "0" );
     x_hiscore = VAR_Register( "hiscore", "10000" );
     x_musicVolume = VAR_Register( "musicVolume", "1" );
@@ -1085,21 +1097,23 @@ static void RegisterVars( void ) {
     CMD_Register( "moveLeft", MoveLeft_f );
     CMD_Register( "moveRight", MoveRight_f );
     CMD_Register( "moveDown", MoveDown_f );
-    CMD_Register( "rotate", Rotate_f );
+    CMD_Register( "rotate_ccw", RotateCCW_f );
+    CMD_Register( "rotate_cw", RotateCW_f );
     CMD_Register( "horizontalMove", HorzAxis_f );
     CMD_Register( "restart", Restart_f );
     I_Bind( "Left", "moveLeft" );
     I_Bind( "Right", "moveRight" );
     I_Bind( "Down", "moveDown" );
-    I_Bind( "Up", "rotate" );
+    I_Bind( "A", "rotate_ccw" );
+    I_Bind( "S", "rotate_cw" );
     I_Bind( "joystick axis 0", "horizontalMove" );
-    I_Bind( "joystick axis 1", "-rotate ; +moveDown" );
+    I_Bind( "joystick axis 1", "-rotate_ccw ; +moveDown" );
     for ( int button = 0; button < I_MAX_BUTTONS; button++ ) {
         const char *str = va( "joystick button %d", button );
-        I_Bind( str, "rotate" );
+        I_Bind( str, "rotate_ccw" );
     }
     I_Bind( "joystick hat horizontal", "horizontalMove" );
-    I_Bind( "joystick hat vertical", "-rotate ; +moveDown" );
+    I_Bind( "joystick hat vertical", "-rotate_ccw ; +moveDown" );
 }
 
 static void DrawSpeedFunc( void ) {
