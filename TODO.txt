@@ -1,7 +1,6 @@
+Instant drop button
 Block horizontal axis when down axis is on.
-Implement rotate cw
 Full screen
-Glitchy hat switch on xbox controller
 Fix joystick locks and other crap on windows
 More than 2 players
 Number of bitmaps of shapes can be derived.
@@ -12,6 +11,10 @@ IN PROGRESS
 //============================================================================================
 
 DONE
+
+Fri, Feb 23, 2018 15:57:09
+* Implement rotate cw
+* Glitchy hat switch on xbox controller
 
 Sun, Jan 14, 2018 23:03:51
 * Controller support instead of joystick support.

@@ -169,6 +169,7 @@ static void LatchButtons( playerSeat_t *pls ) {
     LatchButton( &pls->butMoveDown );
     LatchButton( &pls->butMoveLeft );
     LatchButton( &pls->butMoveRight );
+    LatchButton( &pls->butRotateCW );
     LatchButton( &pls->butRotateCCW );
 }
 
