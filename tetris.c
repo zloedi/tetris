@@ -1078,7 +1078,7 @@ static void MoveDown_f( void ) {
 }
 
 static void RegisterVars( void ) {
-    VAR_SetCFGVersion( 1 );
+    VAR_SetCFGVersion( 4 );
     x_showAtlas = VAR_Register( "showAtlas", "0" );
     x_hiscore = VAR_Register( "hiscore", "10000" );
     x_musicVolume = VAR_Register( "musicVolume", "1" );
@@ -1107,13 +1107,13 @@ static void RegisterVars( void ) {
     I_Bind( "A", "rotate_ccw" );
     I_Bind( "S", "rotate_cw" );
     I_Bind( "joystick axis 0", "horizontalMove" );
-    I_Bind( "joystick axis 1", "-rotate_ccw ; +moveDown" );
+    I_Bind( "joystick axis 1", "+moveDown" );
     for ( int button = 0; button < I_MAX_BUTTONS; button++ ) {
-        const char *str = va( "joystick button %d", button );
-        I_Bind( str, "rotate_ccw" );
+        I_Bind( va( "joystick button %d", button ), (button & 1) ? "rotate_ccw" : "rotate_cw" );
     }
-    I_Bind( "joystick hat horizontal", "horizontalMove" );
-    I_Bind( "joystick hat vertical", "-rotate_ccw ; +moveDown" );
+    I_Bind( "joystick button 12", "+moveDown" );
+    I_Bind( "joystick button 13", "moveLeft" );
+    I_Bind( "joystick button 14", "moveRight" );
 }
 
 static void DrawSpeedFunc( void ) {
