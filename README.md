@@ -8,5 +8,9 @@ Music track curtesy of InfernoZtorm/SuperDragonMasters.
 Downloaded from here: https://www.newgrounds.com/audio/listen/539636
 
 ----
+
 ![anim](https://i.imgur.com/DRD30fn.gif)
+
+----
+
 ![screenshot](https://i.imgur.com/DCB95ux.png)
