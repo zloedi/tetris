@@ -565,6 +565,10 @@ static bool_t OnAnyButton_f( int device, int code, bool_t down ) {
     if ( x_gameOverCooldown > 0 ) {
         return true;
     }
+    // consume input also on app start, fixes errouneous controller buttons on start
+    if ( SDL_GetTicks() < 2000 ) {
+        return true;
+    }
     int type = I_IsJoystickCode( code ) ? 'j' : 'k';
     int id = '0' + device;
     playerSeat_t *pls = GetSeat( type, id );
