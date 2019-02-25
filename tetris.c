@@ -290,15 +290,15 @@ static char* CPUGetCommand( const char *bind, int deviceType, int deviceId, bool
 static void CPUPushCommand( playerSeat_t *pls, const char *bind, bool_t engage ) {
     if ( ! VAR_Num( x_cpuSkipPlay ) ) {
         char *cmd = CPUGetCommand( bind, pls->deviceType, pls->deviceId, engage );
-        stb_sb_push( pls->cpuCommands, cmd );
+        sb_push( pls->cpuCommands, cmd );
     }
 }
 
 static void CPUClearCommands( playerSeat_t *pls ) {
-    for ( int i = 0; i < stb_sb_count( pls->cpuCommands ); i++ ) {
+    for ( int i = 0; i < sb_count( pls->cpuCommands ); i++ ) {
         A_Free( pls->cpuCommands[i] );
     }
-    stb_sb_free( pls->cpuCommands );
+    sb_free( pls->cpuCommands );
     pls->cpuCommands = NULL;
 }
 
@@ -449,7 +449,7 @@ static void CPUUpdate( playerSeat_t *pls, int deltaTime ) {
             CMD_ExecuteString( cmd );
             pls->cpuIdleTime = 0;
             pls->cpuCurrentCommand++;
-            if ( pls->cpuCurrentCommand == stb_sb_count( pls->cpuCommands ) ) {
+            if ( pls->cpuCurrentCommand == sb_count( pls->cpuCommands ) ) {
                 CPUClearCommands( pls );
             }
         } 
